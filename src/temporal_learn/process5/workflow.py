@@ -5,9 +5,8 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
-with workflow.unsafe.imports_passed_through():
-    from .activities import InventoryActivities
-    from .models import Command, CommandResult, CommandType
+from .activities import InventoryActivities
+from .models import Command, CommandResult, CommandType
 
 _RETRY = RetryPolicy(
     maximum_attempts=5,

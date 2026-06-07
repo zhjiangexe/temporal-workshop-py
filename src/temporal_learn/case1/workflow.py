@@ -2,9 +2,8 @@ from datetime import timedelta
 
 from temporalio import workflow
 
-with workflow.unsafe.imports_passed_through():
-    from .activities import process_deliver_order, process_payment, process_reserve_inventory
-    from .models import Order
+from .activities import process_deliver_order, process_payment, process_reserve_inventory
+from .models import Order
 
 
 @workflow.defn

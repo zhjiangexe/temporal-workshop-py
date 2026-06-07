@@ -3,8 +3,7 @@ from datetime import timedelta
 
 from temporalio import workflow
 
-with workflow.unsafe.imports_passed_through():
-    from .activities import check_title_validity, test_only
+from .activities import check_title_validity, test_only
 
 _ACT_CFG: workflow.ActivityConfig = {
     "start_to_close_timeout": timedelta(seconds=30),

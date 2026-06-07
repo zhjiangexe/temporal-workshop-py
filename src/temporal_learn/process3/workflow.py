@@ -3,9 +3,8 @@ from datetime import timedelta
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 
-with workflow.unsafe.imports_passed_through():
-    from .activities import apply_new_price, notify_reviewer, record_decision
-    from .models import ProductChangeSpec, ReviewDecision, ReviewOutcome
+from .activities import apply_new_price, notify_reviewer, record_decision
+from .models import ProductChangeSpec, ReviewDecision, ReviewOutcome
 
 _RETRY = RetryPolicy(
     initial_interval=timedelta(seconds=1),

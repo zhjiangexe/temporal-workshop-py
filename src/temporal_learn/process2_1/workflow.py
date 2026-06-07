@@ -4,16 +4,15 @@ from datetime import timedelta
 from temporalio import workflow
 from temporalio.common import RetryPolicy
 
-with workflow.unsafe.imports_passed_through():
-    from .activities import (
-        create_or_update_product,
-        delete_product,
-        publish_to_storefront,
-        revert_pricing_and_availability,
-        setup_pricing_and_availability,
-        unpublish_from_storefront,
-    )
-    from .models import ProductInput, ProductPublishResult
+from .activities import (
+    create_or_update_product,
+    delete_product,
+    publish_to_storefront,
+    revert_pricing_and_availability,
+    setup_pricing_and_availability,
+    unpublish_from_storefront,
+)
+from .models import ProductInput, ProductPublishResult
 
 _RETRY = RetryPolicy(
     maximum_attempts=2,
