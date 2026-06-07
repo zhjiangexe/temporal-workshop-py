@@ -1,0 +1,31 @@
+{
+  "name": "temporal-workshop-ts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "process1:worker": "ts-node src/process1/worker.ts",
+    "process1:starter": "ts-node src/process1/starter.ts",
+    "process2:worker": "ts-node src/process2/worker.ts",
+    "process2:starter": "ts-node src/process2/starter.ts",
+    "process3:worker": "ts-node src/process3/worker.ts",
+    "process3:starter": "ts-node src/process3/starter.ts",
+    "process3:update": "ts-node src/process3/client-update.ts",
+    "test": "node --require ts-node/register --test --test-concurrency=1 tests/**/test_*.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@temporalio/activity": "^1.12.1",
+    "@temporalio/client": "^1.12.1",
+    "@temporalio/worker": "^1.12.1",
+    "@temporalio/workflow": "^1.12.1"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "^1.17.2",
+    "@types/node": "^24.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.0"
+  },
+  "overrides": {
+    "protobufjs": "^7.6.2"
+  }
+}

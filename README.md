@@ -48,3 +48,39 @@ uv run python -m temporal_learn.process1.starter
 ```sh
 uv run pytest
 ```
+
+## TypeScript 版本
+
+Process 1～3 另有 TypeScript 版本，獨立放在：
+
+```text
+typescript/
+```
+
+安裝與執行方式：
+
+```sh
+cd typescript
+npm install
+npm run typecheck
+```
+
+實際啟動前，請先另開 terminal 啟動 Temporal Server：
+
+```sh
+temporal server start-dev
+```
+
+可執行的範例：
+
+```sh
+npm run process1:worker
+npm run process1:starter
+
+npm run process2:worker
+npm run process2:starter
+
+npm run process3:worker
+npm run process3:starter
+npm run process3:update -- <starter 印出的 WorkflowId>
+```
