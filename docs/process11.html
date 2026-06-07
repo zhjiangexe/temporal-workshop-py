@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 11 — 非同步 Activity 完成（Async Activity Completion）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  .callout-err { border-left-color: var(--err); background: #fdecec; }
+  .step { counter-increment: step-counter; position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+  .step::before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: var(--accent); color: var(--bg); width: 1.8rem; height: 1.8rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: .9rem; }
+  .steps { counter-reset: step-counter; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  a { color: var(--accent); }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 11 — 非同步 Activity 完成</h1>
+<p><span class="tag">Async Completion</span><span class="tag">Task Token</span><span class="tag">External System</span></p>
+
+<h2>學習目標</h2>
+<ul>
+  <li>理解 Async Activity Completion：Activity 函式 return 後，Activity 還沒算「完成」</li>
+  <li>學會用 <code>task_token</code> 在外部（另一個程序/服務）完成 Activity</li>
+  <li>認識適用場景：等待外部系統回覆（webhook、人工操作、第三方 API callback）</li>
+</ul>
+
+<h2>與一般 Activity 的差異</h2>
+<table>
+  <tr><th></th><th>一般 Activity</th><th>Async Activity</th></tr>
+  <tr><td>完成方式</td><td>函式 <code>return</code> 即完成</td><td>函式 return 後仍在等待，由外部用 <code>task_token</code> 完成</td></tr>
+  <tr><td>Worker 佔用</td><td>函式執行期間佔用 Worker slot</td><td><code>raise_complete_async()</code> 後立即釋放 Worker slot</td></tr>
+  <tr><td>適用場景</td><td>可在 Worker 內完成的工作</td><td>需要等待外部系統回應的工作</td></tr>
+</table>
+
+<h2>流程概念</h2>
+<p class="flow-hint">流程圖區塊可拖曳右下角放大，較長的圖也可水平捲動。</p>
+<pre><code>Workflow                    Activity (Worker)              External Completer
+  │                            │                              │
+  ├── execute_activity() ─────→│                              │
+  │                            ├── 取得 task_token             │
+  │                            ├── 把 token 交給外部系統 ──────→│
+  │                            ├── raise_complete_async()      │
+  │                            │   (函式結束，Worker slot 釋放)  │
+  │   [等待中...]                │                              │
+  │                            │                              ├── 處理完畢
+  │                            │                              ├── handle.complete(result)
+  │←───────────────── Activity 完成，回傳 result ──────────────┤
+  │                                                           │
+  │   收到結果，繼續後續流程</code></pre>
+
+<div class="callout-ok callout">
+  <strong>實際原始碼位置</strong><br>
+  本頁範例位於 <code>src/temporal_learn/process11/</code>；執行指令中的 <code>temporal_learn.process11</code> 是對應的 Python module path。
+</div>
+
+<h2>啟動方式</h2>
+<div class="steps">
+  <div class="step">
+    <strong>用測試執行（推薦）</strong>
+    <pre><code>uv run pytest tests/test_process11_async_completion.py -v</code></pre>
+  </div>
+  <div class="step">
+    <strong>在 Web UI 觀察</strong>
+    <p>打開 <a href="http://localhost:8233" target="_blank">http://localhost:8233</a>，觀察 Activity 的完成過程。</p>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單</h2>
+<table>
+  <tr><th>檢查項目</th><th>預期結果</th><th>在哪裡看</th></tr>
+  <tr><td>Workflow 狀態</td><td><code>Completed</code></td><td>Workflow 詳情頁頂部</td></tr>
+  <tr><td>Activity Result</td><td><code>"READY-{id}"</code></td><td>Event History → ActivityTaskCompleted</td></tr>
+  <tr><td>Event 時間差</td><td>ActivityTaskStarted 和 ActivityTaskCompleted 之間可能有時間差（表示 async 等待）</td><td>Event History 時間戳</td></tr>
+</table>
+
+<h2>程式碼解說</h2>
+
+<div class="file-order">
+  <strong>閱讀順序：models → activities → workflow → worker → starter</strong>
+  <ol>
+    <li><code>models.py</code>：本流程未使用額外資料模型。</li>
+    <li><code>activities.py</code>：Activity 取得 task token，交由外部完成。</li>
+    <li><code>workflow.py</code>：<code>AsyncWf.run</code> 以一般方式等待 Activity 結果。</li>
+    <li><code>worker.py</code>：本流程未提供獨立 worker 檔，測試中會註冊 <code>AsyncActImpl</code>。</li>
+    <li><code>starter.py</code>：本流程未提供獨立 starter，可用測試互動。</li>
+  </ol>
+</div>
+
+<h3>activities.py — Activity 清單</h3>
+<table>
+  <tr><th>Activity</th><th>用途</th></tr>
+  <tr><td><code>wait_external</code></td><td>取得 task token 後呼叫 <code>raise_complete_async()</code>，等待外部完成。</td></tr>
+</table>
+
+<h3>activities.py — Activity 端</h3>
+<pre><code>class AsyncActImpl:
+    def __init__(self, client: Client):
+        self._client = client               # 需要 Client 來完成 Activity
+
+    @activity.defn
+    async def wait_external(self, id: str) -> str:
+        token = activity.info().task_token   # 取得 task token
+        asyncio.create_task(self._complete_later(token, id))  # 啟動背景任務
+        activity.raise_complete_async()      # 告訴 Temporal：我先 return，但 Activity 還沒完成
+
+    async def _complete_later(self, token: bytes, id: str) -> None:
+        handle = self._client.get_async_activity_handle(task_token=token)
+        await handle.complete(f"READY-{id}")   # 在外部完成 Activity</code></pre>
+
+<div class="callout-ok callout">
+  <strong>raise_complete_async() 的意義</strong><br>
+  呼叫 <code>activity.raise_complete_async()</code> 後：
+  <ul>
+    <li>Activity 函式立即結束</li>
+    <li>Worker 釋放這個 Activity 的執行 slot（可以處理其他 Activity）</li>
+    <li>但 Temporal Server 仍然認為 Activity 在「進行中」</li>
+    <li>直到有人用 <code>task_token</code> 呼叫 <code>handle.complete()</code> 或 <code>handle.fail()</code></li>
+  </ul>
+</div>
+
+<h3>workflow.py — Workflow 端完全不知道差異</h3>
+<pre><code>@workflow.defn
+class AsyncWf:
+    @workflow.run
+    async def run(self, id: str) -> str:
+        return await workflow.execute_activity_method(
+            AsyncActImpl.wait_external,
+            id,
+            start_to_close_timeout=timedelta(seconds=10),
+        )</code></pre>
+<p>Workflow 端的程式碼完全一樣——它不知道也不需要知道 Activity 是同步還是非同步完成的。<code>await</code> 會等到 Activity 真正完成。</p>
+
+<h3>Task Token 是什麼？</h3>
+<div class="callout">
+  <strong>Task Token</strong><br>
+  Task Token 是一個 opaque 的 <code>bytes</code> 值，由 Temporal Server 產生。它唯一識別一個 Activity Task。<br>
+  誰持有這個 token，誰就能完成（或失敗）這個 Activity。<br><br>
+  在實際場景中，你會把 task token：
+  <ul>
+    <li>儲存到資料庫，等 webhook 收到回覆後用 token 完成 Activity</li>
+    <li>傳給另一個微服務，讓它處理完後回報</li>
+    <li>放在一個 UI 上，等人工操作後完成</li>
+  </ul>
+</div>
+
+<h2>實際應用場景</h2>
+
+<div class="callout">
+  <strong>場景 1：等待第三方支付確認</strong>
+  <pre><code># Activity 中
+token = activity.info().task_token
+save_to_db(payment_id, token)       # 儲存 token
+call_payment_api(payment_id)        # 發起支付
+activity.raise_complete_async()     # 不等結果
+
+# Webhook handler 中（收到支付回覆時）
+token = load_from_db(payment_id)
+handle = client.get_async_activity_handle(task_token=token)
+await handle.complete(payment_result)</code></pre>
+</div>
+
+<div class="callout">
+  <strong>場景 2：等待人工審核</strong>
+  <pre><code># Activity 中
+token = activity.info().task_token
+create_review_task(token, document_id)  # 建立審核任務
+activity.raise_complete_async()
+
+# 審核系統 API 中（審核者按下「核准」時）
+token = get_token_from_review_task(task_id)
+handle = client.get_async_activity_handle(task_token=token)
+await handle.complete(ReviewResult(approved=True))</code></pre>
+</div>
+
+<h2>注意事項</h2>
+
+<div class="callout-err callout">
+  <strong>start_to_close_timeout 仍然生效</strong><br>
+  即使用了 async completion，<code>start_to_close_timeout</code> 仍然會計時。如果在 timeout 內沒有人呼叫 <code>handle.complete()</code>，Activity 會被判定為 timeout 並觸發 retry。<br>
+  等待外部系統回覆可能需要很長時間，記得設定夠長的 timeout，或者使用 heartbeat 來延長 Activity 的存活時間。
+</div>
+
+<div class="callout-err callout">
+  <strong>Task Token 的安全性</strong><br>
+  Task Token 等同於「完成 Activity 的權限」。持有 token 的任何人都可以完成或失敗該 Activity。<br>
+  不要將 token 暴露在公開的 URL 或 log 中。
+</div>
+
+<div class="callout">
+  <strong>handle.fail() 讓 Activity 失敗</strong><br>
+  除了 <code>handle.complete(result)</code>，也可以用 <code>handle.fail(error)</code> 讓 Activity 以失敗狀態結束。<br>
+  還有 <code>handle.heartbeat(details)</code> 可以從外部送心跳（雖然 Activity 函式已經 return）。
+</div>
+
+<h2>延伸練習</h2>
+<ol>
+  <li>加入延遲：讓 <code>_complete_later</code> 先 <code>await asyncio.sleep(3)</code> 再 complete，模擬外部系統的處理時間，觀察 Web UI 中 Activity 的等待狀態</li>
+  <li>使用 <code>handle.fail()</code> 替代 <code>handle.complete()</code>，觀察 Activity 失敗後是否觸發 retry</li>
+  <li>把 <code>_complete_later</code> 改為一個獨立的 script（模擬完全獨立的外部程序），用硬編碼的 task token 來完成 Activity</li>
+</ol>
+
+<script src="workshop.js"></script>
+</body>
+</html>

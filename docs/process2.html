@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 2 — 商品上架流程（兩種補償寫法）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  p { margin: .5rem 0; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  a { color: var(--accent); }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 2 — 商品上架流程：兩種補償寫法</h1>
+<p><span class="tag">Compensation</span><span class="tag">Workflow Control Flow</span><span class="tag">Helper Extraction</span></p>
+
+<h2>版本選擇</h2>
+<table>
+  <tr><th>版本</th><th>程式位置</th><th>重點</th><th>適合時機</th></tr>
+  <tr>
+    <td><a href="process2-1.html">Process 2-1</a></td>
+    <td><code>src/temporal_learn/process2_1/</code></td>
+    <td>直接在 <code>workflow.py</code> 維護 <code>compensations</code> 清單，正向 Activity 執行前先登記安全補償。</td>
+    <td>初學 Temporal 時優先看這版，最貼近 Workflow 呼叫 Activity 的原始概念。</td>
+  </tr>
+  <tr>
+    <td><a href="process2-2.html">Process 2-2</a></td>
+    <td><code>src/temporal_learn/process2_2/</code></td>
+    <td>使用 <code>shared/saga.py</code> 封裝補償清單與反向執行，同樣先登記安全補償。</td>
+    <td>已理解 2-1 後，再看如何把重複的補償管理抽成 helper。</td>
+  </tr>
+</table>
+
+<div class="callout-ok callout">
+  <strong>建議閱讀順序</strong><br>
+  先看 <a href="process2-1.html">Process 2-1</a>，理解 Temporal Workflow 如何直接編排正向 Activity 與補償 Activity；再看 <a href="process2-2.html">Process 2-2</a>，理解 helper 只是在整理程式碼，不是 Temporal SDK 的內建功能。
+</div>
+
+<script src="workshop.js"></script>
+</body>
+</html>

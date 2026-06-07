@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 3 — 商品改價審批（Workflow Update + Human-in-the-Loop）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  .callout-err { border-left-color: var(--err); background: #fdecec; }
+  .step { counter-increment: step-counter; position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+  .step::before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: var(--accent); color: var(--bg); width: 1.8rem; height: 1.8rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: .9rem; }
+  .steps { counter-reset: step-counter; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  a { color: var(--accent); }
+  .flow { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; font-family: monospace; }
+  .flow-box { background: var(--code-bg); border: 1px solid var(--border); padding: .3rem .8rem; border-radius: 4px; }
+  .flow-arrow { color: var(--accent); font-weight: bold; }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 3 — 商品改價審批流程</h1>
+<p><span class="tag">Workflow Update</span><span class="tag">Human-in-the-Loop</span><span class="tag">wait_condition</span><span class="tag">Timeout</span></p>
+
+<h2>學習目標</h2>
+<ul>
+  <li>理解 <code>@workflow.update</code>：讓外部客戶端對執行中的 Workflow 送入資料並等待處理完成</li>
+  <li>學會 <code>workflow.wait_condition</code> 搭配 timeout 實現「等待人工決定，逾時自動處理」</li>
+  <li>認識 Human-in-the-Loop 模式的典型設計</li>
+</ul>
+
+<h2>流程概念</h2>
+<p class="flow-hint">流程圖區塊可拖曳右下角放大，較長的圖也可水平捲動。</p>
+<div class="flow">
+  <span class="flow-box">通知審核者</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="border-color: var(--warn);">等待審核<br>(上限 48 hr)</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">記錄決定</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">核准？套用新價格</span>
+</div>
+
+<div class="callout-ok callout">
+  <strong>實際原始碼位置</strong><br>
+  本頁範例位於 <code>src/temporal_learn/process3/</code>；執行指令中的 <code>temporal_learn.process3</code> 是對應的 Python module path。
+</div>
+
+<h2>啟動方式</h2>
+<div class="steps">
+  <div class="step">
+    <strong>啟動 Temporal Server</strong>
+    <pre><code>temporal server start-dev</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Worker</strong>
+    <pre><code>uv run python -m temporal_learn.process3.worker</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Workflow</strong>
+    <pre><code>uv run python -m temporal_learn.process3.starter</code></pre>
+    <p>Workflow 啟動後會停在「等待審核」階段。記下印出的 Workflow ID。</p>
+  </div>
+  <div class="step">
+    <strong>送出審核決定（模擬審核者操作）</strong>
+    <p>修改 <code>client_update.py</code> 中的 <code>WORKFLOW_ID</code> 為上一步的 ID，然後執行：</p>
+    <pre><code>uv run python -m temporal_learn.process3.client_update</code></pre>
+  </div>
+  <div class="step">
+    <strong>在 Web UI 觀察</strong>
+    <p>打開 <a href="http://localhost:8233" target="_blank">http://localhost:8233</a>，觀察 Workflow 從等待到完成的過程。</p>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單</h2>
+<table>
+  <tr><th>檢查項目</th><th>預期結果</th><th>在哪裡看</th></tr>
+  <tr><td>送出 Update 前</td><td>Workflow 狀態為 <code>Running</code>，停在 wait_condition</td><td>Workflow 詳情頁頂部</td></tr>
+  <tr><td>送出 Update 後</td><td>狀態變為 <code>Completed</code></td><td>同上</td></tr>
+  <tr><td>Event History</td><td>可以看到 <code>WorkflowExecutionUpdateAccepted</code> 事件</td><td>Event History 時間線</td></tr>
+  <tr><td>Activity 順序</td><td>notify_reviewer → record_decision → apply_new_price</td><td>Event History 中的 ActivityTask 事件</td></tr>
+</table>
+
+<div class="callout-ok callout">
+  <strong>測試 timeout 路徑</strong><br>
+  啟動 Workflow 後<strong>不要</strong>送 Update，直接等待。在測試環境中可以用 time-skipping 加速。<br>
+  48 小時後 Workflow 會自動 reject，只會有 notify_reviewer → record_decision 兩個 Activity（沒有 apply_new_price）。
+</div>
+
+<h2>程式碼解說</h2>
+
+<div class="file-order">
+  <strong>閱讀順序：models → activities → workflow → worker → starter</strong>
+  <ol>
+    <li><code>models.py</code>：定義改價規格與審核決定。</li>
+    <li><code>activities.py</code>：通知、記錄決定、套用新價格。</li>
+    <li><code>workflow.py</code>：<code>ProductChangeWorkflow.run</code> 等待 Update 或 timeout。</li>
+    <li><code>worker.py</code>：註冊審批 Workflow 與三個 Activity。</li>
+    <li><code>starter.py</code>：啟動審批流程；<code>client_update.py</code> 負責送入審核決定。</li>
+  </ol>
+</div>
+
+<h3>activities.py — Activity 清單</h3>
+<table>
+  <tr><th>Activity</th><th>用途</th></tr>
+  <tr><td><code>notify_reviewer</code></td><td>通知審核者有新的改價請求。</td></tr>
+  <tr><td><code>record_decision</code></td><td>記錄核准或拒絕結果。</td></tr>
+  <tr><td><code>apply_new_price</code></td><td>核准後套用新的商品價格。</td></tr>
+</table>
+
+<div class="code-explain">
+  <div class="code-explain-row">
+    <div class="code-pane">
+      <h3>workflow.py — Update + Wait Condition</h3>
+      <pre><code>@workflow.defn
+class ProductChangeWorkflow:
+    def __init__(self):
+        self._decision: ReviewDecision | None = None  # 審核決定，初始為空
+
+    @workflow.run
+    async def run(self, spec: ProductChangeSpec) -> None:
+        await workflow.execute_activity(notify_reviewer, spec, **_ACT_CFG)
+
+        try:
+            # 等待條件成立（有人送了審核決定），或 48 小時後 timeout
+            await workflow.wait_condition(
+                lambda: self._decision is not None,
+                timeout=timedelta(hours=48),
+            )
+        except TimeoutError:
+            # 逾時：系統自動拒絕
+            self._decision = ReviewDecision(
+                outcome=ReviewOutcome.REJECT,
+                approver_id="system",
+                reason="timeout after 48 hours",
+            )
+
+        decision = self._decision
+        await workflow.execute_activity(
+            record_decision, args=[spec, decision], **_ACT_CFG
+        )
+
+        if decision.outcome == ReviewOutcome.REJECT:
+            return  # 拒絕就結束，不套用價格
+
+        await workflow.execute_activity(apply_new_price, spec, **_ACT_CFG)
+
+    @workflow.update
+    async def update(self, decision: ReviewDecision) -> None:
+        if self._decision is None:
+            self._decision = decision  # 只接受第一次審核</code></pre>
+    </div>
+    <div class="connector" aria-hidden="true"></div>
+    <div class="explain-pane">
+      <div class="callout">
+        <strong>wait_condition 的運作機制</strong><br>
+        <code>wait_condition(predicate, timeout)</code> 會持續檢查 <code>predicate</code> 是否為 <code>True</code>。<br>
+        它<strong>不是</strong>輪詢（polling），而是在 Workflow 狀態改變（收到 signal/update/activity 完成等）時自動重新檢查。<br>
+        在等待期間，Workflow 不占用 Worker 資源——Temporal Server 持有這個等待狀態。
+      </div>
+    </div>
+  </div>
+
+  <div class="code-explain-row">
+    <div class="code-pane">
+      <h3>client_update.py — 外部送入審核</h3>
+      <pre><code>handle = client.get_workflow_handle_for(
+    ProductChangeWorkflow.run,
+    workflow_id=WORKFLOW_ID,
+)
+await handle.execute_update(
+    ProductChangeWorkflow.update,
+    ReviewDecision(
+        outcome=ReviewOutcome.APPROVE,
+        approver_id="marketing_lead",
+    ),
+)</code></pre>
+    </div>
+    <div class="connector" aria-hidden="true"></div>
+    <div class="explain-pane">
+      <div class="callout">
+        <strong>Update vs Signal 的選擇</strong><br>
+        <table>
+          <tr><th></th><th>Update</th><th>Signal</th></tr>
+          <tr><td>回傳值</td><td>可以有回傳值（等待 handler 完成）</td><td>fire-and-forget，沒有回傳值</td></tr>
+          <tr><td>等待行為</td><td><code>execute_update</code> 會等到 handler 執行完畢</td><td><code>signal</code> 送出後立即 return</td></tr>
+          <tr><td>錯誤處理</td><td>handler 中的 Exception 會傳回給呼叫端</td><td>呼叫端無法得知處理結果</td></tr>
+          <tr><td>適用場景</td><td>需要知道處理結果的互動（審批、RPC 風格）</td><td>只需通知，不需等結果（事件觸發）</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>注意事項</h2>
+
+<div class="callout-err callout">
+  <strong>Update handler 的冪等設計</strong><br>
+  <code>if self._decision is None:</code> 確保只接受第一次審核決定。如果沒有這個檢查，重複送 Update 可能導致覆蓋先前的審核結果。
+</div>
+
+<div class="callout">
+  <strong>TimeoutError 的處理</strong><br>
+  <code>wait_condition</code> 的 timeout 拋出的是 Python 標準的 <code>TimeoutError</code>，不是 Temporal 特有的 Exception。<br>
+  Temporal 的 timer 是持久化的——即使 Worker 重啟，48 小時後仍然會觸發 timeout。這和 <code>asyncio.sleep</code> 在 Workflow 中的行為一致。
+</div>
+
+<div class="callout">
+  <strong>實務考量：審核通知</strong><br>
+  這個範例中 <code>notify_reviewer</code> 只是 print。在實際系統中，你會在這裡發 Slack 訊息、Email 或推播通知，並附上一個連結讓審核者可以觸發 Update（例如透過你的 API server 呼叫 <code>execute_update</code>）。
+</div>
+
+<h2>延伸練習</h2>
+<ol>
+  <li>讓 Update handler 回傳一個 <code>str</code>（例如 "Accepted"），然後在 <code>client_update.py</code> 中印出回傳值</li>
+  <li>加入 Update validator：拒絕 <code>approver_id</code> 為空的審核決定</li>
+  <li>改成 Signal 版本，比較呼叫端的行為差異</li>
+  <li>加入「48 小時前 24 小時自動催促」的邏輯（提示：可以在 wait_condition 前先等 24 小時）</li>
+</ol>
+
+<script src="workshop.js"></script>
+</body>
+</html>

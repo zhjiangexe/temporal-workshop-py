@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 4 — 長時間任務（Heartbeat + 斷點續傳）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  .callout-err { border-left-color: var(--err); background: #fdecec; }
+  .step { counter-increment: step-counter; position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+  .step::before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: var(--accent); color: var(--bg); width: 1.8rem; height: 1.8rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: .9rem; }
+  .steps { counter-reset: step-counter; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  a { color: var(--accent); }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 4 — 長時間任務（Heartbeat + 斷點續傳）</h1>
+<p><span class="tag">Heartbeat</span><span class="tag">Heartbeat Details</span><span class="tag">Long-Running Activity</span><span class="tag">Resume from Checkpoint</span></p>
+
+<h2>學習目標</h2>
+<ul>
+  <li>理解 Heartbeat 的用途：讓 Temporal Server 知道 Activity 還活著</li>
+  <li>學會利用 <code>heartbeat_details</code> 實現「斷點續傳」——Worker 重啟後從上次進度繼續</li>
+  <li>理解 <code>heartbeat_timeout</code> 與 <code>start_to_close_timeout</code> 的差異</li>
+</ul>
+
+<h2>流程概念</h2>
+<p class="flow-hint">流程圖區塊可拖曳右下角放大，較長的圖也可水平捲動。</p>
+<p>Workflow 只有一個 Activity：處理 100 筆資料。每筆花 0.5 秒，總共約 50 秒。</p>
+<pre><code>for i in range(start, total):    # start 可能不是 0（斷點續傳）
+    await asyncio.sleep(0.5)
+    activity.heartbeat(i)         # 回報進度
+    print(f"progress: {i} %")</code></pre>
+
+<div class="callout-ok callout">
+  <strong>實際原始碼位置</strong><br>
+  本頁範例位於 <code>src/temporal_learn/process4/</code>；執行指令中的 <code>temporal_learn.process4</code> 是對應的 Python module path。
+</div>
+
+<h2>啟動方式</h2>
+<div class="steps">
+  <div class="step">
+    <strong>啟動 Temporal Server</strong>
+    <pre><code>temporal server start-dev</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Worker</strong>
+    <pre><code>uv run python -m temporal_learn.process4.worker</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Workflow</strong>
+    <pre><code>uv run python -m temporal_learn.process4.starter</code></pre>
+    <p>觀察 Worker 的終端輸出，會看到 <code>progress: 0 %</code> ~ <code>progress: 99 %</code>。</p>
+  </div>
+  <div class="step">
+    <strong>（選做）模擬 Worker 中斷</strong>
+    <p>在 progress 到達約 30% 時，按 <code>Ctrl+C</code> 殺掉 Worker。等幾秒後重新啟動 Worker。</p>
+    <p>觀察：Worker 重啟後會從 ~30 開始，而不是從 0 開始。</p>
+  </div>
+  <div class="step">
+    <strong>在 Web UI 觀察</strong>
+    <p>打開 <a href="http://localhost:8233" target="_blank">http://localhost:8233</a>，找到 Workflow。</p>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單</h2>
+<table>
+  <tr><th>檢查項目</th><th>預期結果</th><th>在哪裡看</th></tr>
+  <tr><td>正常完成</td><td>狀態 <code>Completed</code>，1 個 Activity</td><td>Workflow 詳情頁</td></tr>
+  <tr><td>中斷後續傳</td><td>Event History 中有多個 ActivityTaskStarted（第一次被 timeout，第二次從斷點續傳完成）</td><td>Event History</td></tr>
+  <tr><td>Heartbeat Details</td><td>展開 ActivityTaskStarted 事件，可以看到 <code>lastHeartbeatDetails</code> 記錄了上次的進度</td><td>Event History 事件詳情</td></tr>
+</table>
+
+<h2>程式碼解說</h2>
+
+<div class="file-order">
+  <strong>閱讀順序：models → activities → workflow → worker → starter</strong>
+  <ol>
+    <li><code>models.py</code>：<code>LongJobSpec</code> 定義資料總量。</li>
+    <li><code>activities.py</code>：長時間處理資料並定期 heartbeat。</li>
+    <li><code>workflow.py</code>：設定 Activity timeout、heartbeat timeout 與 retry。</li>
+    <li><code>worker.py</code>：註冊長任務 Workflow 與 Activity。</li>
+    <li><code>starter.py</code>：啟動長時間任務。</li>
+  </ol>
+</div>
+
+<h3>activities.py — Activity 清單</h3>
+<table>
+  <tr><th>Activity</th><th>用途</th></tr>
+  <tr><td><code>process_dataset</code></td><td>處理資料集、送出 heartbeat，並在重試時從 heartbeat details 續跑。</td></tr>
+</table>
+
+<h3>workflow.py — Timeout 配置</h3>
+<pre><code>last = await workflow.execute_activity(
+    process_dataset,
+    spec,
+    start_to_close_timeout=timedelta(minutes=5),   # 單次執行上限 5 分鐘
+    heartbeat_timeout=timedelta(seconds=30),        # 30 秒沒收到心跳就判定死亡
+    retry_policy=_RETRY,                            # 最多重試 10 次
+)</code></pre>
+
+<div class="callout">
+  <strong>heartbeat_timeout 的意義</strong><br>
+  Temporal Server 期望 Activity 每 30 秒至少送一次心跳。如果超過 30 秒沒收到：
+  <ol>
+    <li>Temporal 判定 Worker 可能掛了</li>
+    <li>將 Activity 標記為 timeout</li>
+    <li>根據 Retry Policy 將 Activity 重新分派給其他（或同一個）Worker</li>
+    <li>新的 Activity 可以從 <code>heartbeat_details</code> 取得上次的進度</li>
+  </ol>
+</div>
+
+<h3>activities.py — 心跳與斷點續傳</h3>
+<pre><code>@activity.defn
+async def process_dataset(spec: LongJobSpec) -> int:
+    info = activity.info()
+    # 從 heartbeat_details 取得上次的進度（如果有的話）
+    start = int(info.heartbeat_details[0]) if info.heartbeat_details else 0
+
+    for i in range(start, spec.total):   # 從上次的進度繼續
+        await asyncio.sleep(0.5)
+        activity.heartbeat(i)            # 送出心跳，附帶當前進度
+        print(f"progress: {i} %")
+
+    return spec.total - 1</code></pre>
+
+<div class="callout-ok callout">
+  <strong>斷點續傳的關鍵</strong><br>
+  <code>activity.heartbeat(i)</code> 的參數 <code>i</code> 就是 heartbeat details。當 Activity 被重試時，Temporal 會把<strong>最後一次成功送達的 heartbeat details</strong> 放在 <code>activity.info().heartbeat_details</code> 中。<br><br>
+  heartbeat details 可以是任何可序列化的值：一個數字、一個 dict、一個 dataclass 都行。
+</div>
+
+<h2>注意事項</h2>
+
+<div class="callout-err callout">
+  <strong>心跳頻率的設計</strong><br>
+  <ul>
+    <li>心跳太頻繁（例如每 10ms 送一次）會造成 Temporal Server 大量負載</li>
+    <li>心跳太稀疏（接近 heartbeat_timeout）會導致正常工作的 Activity 被誤判死亡</li>
+    <li><strong>經驗法則</strong>：心跳間隔 ≤ heartbeat_timeout 的 1/3。本範例 timeout 30 秒，每 0.5 秒送一次心跳是合理的。</li>
+  </ul>
+</div>
+
+<div class="callout">
+  <strong>SDK 內建的心跳節流（Throttling）</strong><br>
+  Temporal Python SDK 會自動節流心跳：如果你在短時間內送出大量 heartbeat，SDK 只會實際傳送一部分到 Server。所以即使你在迴圈每次迭代都呼叫 <code>activity.heartbeat()</code>，也不會造成網路風暴。<br><br>
+  但 <code>heartbeat_details</code> 的值只有在心跳實際傳送到 Server 時才會被記錄。因此斷點續傳的精確度取決於 SDK 節流後實際送出的頻率。
+</div>
+
+<div class="callout">
+  <strong>不需要 Heartbeat 的場景</strong><br>
+  如果 Activity 很短（幾秒內完成），不需要設 heartbeat。Heartbeat 主要用於：
+  <ul>
+    <li>處理大批資料（需要斷點續傳）</li>
+    <li>長時間等待外部系統回應（需要偵測 Worker 死亡）</li>
+    <li>需要讓外部系統查詢進度</li>
+  </ul>
+</div>
+
+<h2>延伸練習</h2>
+<ol>
+  <li>在 Activity 執行到 i=50 時故意 <code>raise Exception</code>，觀察重試是否從 50 開始</li>
+  <li>把 heartbeat details 改成一個 dict <code>{"index": i, "timestamp": ...}</code>，儲存更豐富的斷點資訊</li>
+  <li>在 Workflow 中加入 Query handler，讓外部可以查詢目前的處理進度</li>
+</ol>
+
+<script src="workshop.js"></script>
+</body>
+</html>

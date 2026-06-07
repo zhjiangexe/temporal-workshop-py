@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 8 — Signal 等待條件（Wait Condition + Signal）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  .callout-err { border-left-color: var(--err); background: #fdecec; }
+  .step { counter-increment: step-counter; position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+  .step::before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: var(--accent); color: var(--bg); width: 1.8rem; height: 1.8rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: .9rem; }
+  .steps { counter-reset: step-counter; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  a { color: var(--accent); }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 8 — Signal 等待條件</h1>
+<p><span class="tag">@workflow.signal</span><span class="tag">wait_condition</span><span class="tag">Timeout</span></p>
+
+<h2>學習目標</h2>
+<ul>
+  <li>理解 <code>@workflow.signal</code>：外部「推」資料進 Workflow，fire-and-forget</li>
+  <li>學會 <code>wait_condition</code> + timeout 的雙路徑模式</li>
+  <li>區分 Signal（通知）vs Update（RPC）的使用時機</li>
+</ul>
+
+<h2>流程概念</h2>
+<p class="flow-hint">流程圖區塊可拖曳右下角放大，較長的圖也可水平捲動。</p>
+<pre><code>路徑 A — 收到 Signal：
+  Workflow 啟動 → 等待 _ready == True (上限 1hr) → 收到 signal → 回傳 "READY"
+
+路徑 B — 逾時：
+  Workflow 啟動 → 等待 _ready == True (上限 1hr) → 1 小時到 → 回傳 "TIMEOUT"</code></pre>
+
+<div class="callout-ok callout">
+  <strong>實際原始碼位置</strong><br>
+  本頁範例位於 <code>src/temporal_learn/process8/</code>；執行指令中的 <code>temporal_learn.process8</code> 是對應的 Python module path。
+</div>
+
+<h2>啟動方式</h2>
+<div class="steps">
+  <div class="step">
+    <strong>用測試執行（推薦，因為有 time-skipping）</strong>
+    <pre><code>uv run pytest tests/test_process8_await.py -v</code></pre>
+  </div>
+  <div class="step">
+    <strong>或手動操作</strong>
+    <p>啟動 Worker 後，用 <code>temporal</code> CLI 手動送 Signal：</p>
+    <pre><code># 啟動 Workflow
+temporal workflow start --type AwaitWorkflow --task-queue test-q --workflow-id await-demo
+
+# 送 Signal
+temporal workflow signal --workflow-id await-demo --name mark_ready</code></pre>
+  </div>
+  <div class="step">
+    <strong>在 Web UI 觀察</strong>
+    <p>打開 <a href="http://localhost:8233" target="_blank">http://localhost:8233</a>，找到 Workflow。</p>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單</h2>
+<table>
+  <tr><th>情境</th><th>Workflow 狀態</th><th>Result</th><th>Event History 關鍵事件</th></tr>
+  <tr><td>送了 Signal</td><td><code>Completed</code></td><td>"READY"</td><td><code>WorkflowSignalReceived</code>（name=mark_ready）</td></tr>
+  <tr><td>沒送 Signal</td><td><code>Completed</code></td><td>"TIMEOUT"</td><td>只有 timer 相關事件，無 signal 事件</td></tr>
+</table>
+
+<h2>程式碼解說</h2>
+
+<div class="file-order">
+  <strong>閱讀順序：models → activities → workflow → worker → starter</strong>
+  <ol>
+    <li><code>models.py</code>：本流程未使用額外資料模型。</li>
+    <li><code>activities.py</code>：本流程沒有 Activity，全部邏輯都在 Workflow 狀態與 Signal 中。</li>
+    <li><code>workflow.py</code>：<code>AwaitWorkflow</code> 用 <code>wait_condition</code> 等待 Signal 或 timeout。</li>
+    <li><code>worker.py</code>：本流程未提供獨立 worker 檔，可用測試或自行註冊。</li>
+    <li><code>starter.py</code>：本流程未提供獨立 starter，可用 Temporal CLI 或測試互動。</li>
+  </ol>
+</div>
+
+<h3>activities.py — Activity 清單</h3>
+<table>
+  <tr><th>Activity</th><th>用途</th></tr>
+  <tr><td colspan="2">本流程沒有 Activity。</td></tr>
+</table>
+
+<h3>workflow.py — 最精簡的 Signal + Wait</h3>
+<pre><code>@workflow.defn
+class AwaitWorkflow:
+    def __init__(self):
+        self._ready = False                          # 旗標
+
+    @workflow.run
+    async def run(self) -> str:
+        try:
+            await workflow.wait_condition(
+                lambda: self._ready,                 # 等這個條件變 True
+                timeout=timedelta(hours=1),          # 或 1 小時後 timeout
+            )
+            return "READY"
+        except TimeoutError:
+            return "TIMEOUT"
+
+    @workflow.signal
+    def mark_ready(self) -> None:
+        self._ready = True                           # Signal 修改旗標</code></pre>
+
+<div class="callout">
+  <strong>wait_condition 的語義</strong><br>
+  <code>wait_condition(predicate, timeout)</code> 等同於：「幫我等到 <code>predicate()</code> 回傳 <code>True</code>，但最多等 <code>timeout</code>。」<br><br>
+  Temporal 不是用輪詢來檢查 predicate 的。當 Workflow 收到任何事件（signal、update、activity 完成等），SDK 會自動重新評估所有 wait_condition 的 predicate。
+</div>
+
+<div class="callout-ok callout">
+  <strong>Signal 可以在 Workflow 啟動前就送出</strong><br>
+  如果你在 Workflow 還沒被 Worker 拉取之前就送了 Signal，Signal 會被 Temporal Server 暫存。等 Worker 開始執行 Workflow 時，Signal 已經在等著了。<br>
+  這表示 <code>wait_condition</code> 可能在第一次檢查時就發現條件已成立，立即通過。
+</div>
+
+<h2>Signal vs Update 選擇指南</h2>
+
+<div class="callout">
+  <strong>用 Signal 的場景</strong>
+  <ul>
+    <li>呼叫端不需要知道處理結果（fire-and-forget）</li>
+    <li>單純通知/觸發：「某件事發生了」</li>
+    <li>需要 buffering：Signal 可以在 Workflow 未執行時累積</li>
+    <li>高吞吐量：Signal 比 Update 輕量</li>
+  </ul>
+
+  <strong>用 Update 的場景（見 Process 3, 7）</strong>
+  <ul>
+    <li>呼叫端需要等待回覆（RPC 風格）</li>
+    <li>需要知道操作是否成功</li>
+    <li>需要回傳計算結果</li>
+  </ul>
+</div>
+
+<h2>注意事項</h2>
+
+<div class="callout-err callout">
+  <strong>Signal handler 中不能有 await</strong><br>
+  Signal handler 應該盡量簡短：修改一個 flag、往 deque 塞一筆資料。不要在 Signal handler 中呼叫 Activity 或做長時間操作。<br>
+  需要在收到 Signal 後執行複雜邏輯？在 <code>@workflow.run</code> 的主流程中用 <code>wait_condition</code> 等待 Signal 修改的狀態，然後在主流程中做處理（見 Process 5 的 inbox pattern）。
+</div>
+
+<div class="callout">
+  <strong>多個 Signal 的處理</strong><br>
+  如果在 <code>wait_condition</code> 通過之前連續送了多個 Signal，所有 Signal handler 都會被執行，但 <code>wait_condition</code> 只會在條件成立時通過一次。<br>
+  如果你需要處理每個 Signal，應該用 queue（deque）來收集，而不是用 boolean flag。
+</div>
+
+<h2>延伸練習</h2>
+<ol>
+  <li>加入一個帶參數的 Signal：<code>mark_ready(reason: str)</code>，讓 Workflow 回傳 <code>f"READY: {reason}"</code></li>
+  <li>加入多重條件：需要收到兩個不同的 Signal（<code>approval_a</code> + <code>approval_b</code>）才通過</li>
+  <li>改成用 <code>asyncio.sleep</code> + flag 而不是 <code>wait_condition</code>，比較兩者的行為差異（提示：sleep 不會因為 flag 改變而提前結束）</li>
+</ol>
+
+<script src="workshop.js"></script>
+</body>
+</html>

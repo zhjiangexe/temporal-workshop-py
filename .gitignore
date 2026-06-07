@@ -1,0 +1,66 @@
+# macOS / editor local files
+.DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local AI/editor tool state
+.claude/settings.local.json
+.codex/
+.agents/
+
+# Python generated files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Build / packaging outputs
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs and local runtime data
+*.log
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+
+# Temporal local dev data
+temporal.db
+temporal.db-*
+temporalite.db
+temporalite.db-*
+
+# Node / frontend artifacts, in case docs tooling is added later
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

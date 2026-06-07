@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 2-1 — 商品上架流程（直接補償清單）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  .callout-err { border-left-color: var(--err); background: #fdecec; }
+  .step { counter-increment: step-counter; position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+  .step::before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: var(--accent); color: var(--bg); width: 1.8rem; height: 1.8rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: .9rem; }
+  .steps { counter-reset: step-counter; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  a { color: var(--accent); }
+  .flow { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; font-family: monospace; }
+  .flow-box { background: var(--code-bg); border: 1px solid var(--border); padding: .3rem .8rem; border-radius: 4px; }
+  .flow-arrow { color: var(--accent); font-weight: bold; }
+  .flow-err { color: var(--err); font-weight: bold; }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 2-1 — 商品上架流程（直接補償清單）</h1>
+<p><span class="tag">Compensation</span><span class="tag">Workflow Control Flow</span><span class="tag">Error Handling</span></p>
+
+<h2>學習目標</h2>
+<ul>
+  <li>理解補償機制：每一步執行前先記住對應的安全回滾操作，失敗時逆序執行補償 Activity</li>
+  <li>學會直接在 Workflow 中維護補償清單，不依賴自製 helper</li>
+  <li>理解補償順序為什麼通常要採用 LIFO（後完成的步驟先回滾）</li>
+  <li>學會在 Workflow 中優雅處理部分成功的場景</li>
+</ul>
+
+<h2>流程概念</h2>
+<p class="flow-hint">流程圖區塊可拖曳右下角放大，較長的圖也可水平捲動。</p>
+<p><strong>正常路徑（Happy Path）：</strong></p>
+<div class="flow">
+  <span class="flow-box">建立商品</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">設定價格</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">上架到店面</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="border-color: var(--ok);">完成</span>
+</div>
+
+<p><strong>失敗路徑（例如第 3 步失敗）：</strong></p>
+<div class="flow">
+  <span class="flow-box">建立商品 ✓</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">設定價格 ✓</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box" style="border-color: var(--err);">上架失敗 ✗</span>
+  <span class="flow-err">→ 補償 →</span>
+  <span class="flow-box">確認下架</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">還原價格</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box">刪除商品</span>
+</div>
+
+<div class="callout-ok callout">
+  <strong>實際原始碼位置</strong><br>
+  本頁範例位於 <code>src/temporal_learn/process2_1/</code>；執行指令中的 <code>temporal_learn.process2_1</code> 是對應的 Python module path。
+</div>
+
+<h2>啟動方式（Happy Path）</h2>
+<div class="steps">
+  <div class="step">
+    <strong>啟動 Temporal Server</strong>
+    <pre><code>temporal server start-dev</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Worker</strong>
+    <pre><code>uv run python -m temporal_learn.process2_1.worker</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Workflow</strong>
+    <pre><code>uv run python -m temporal_learn.process2_1.starter</code></pre>
+  </div>
+  <div class="step">
+    <strong>在 Web UI 觀察</strong>
+    <p>打開 <a href="http://localhost:8233" target="_blank">http://localhost:8233</a>，找到 <code>product-xxxx</code> 開頭的 Workflow。</p>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單（成功路徑）</h2>
+<table>
+  <tr><th>檢查項目</th><th>預期結果</th><th>在哪裡看</th></tr>
+  <tr><td>Workflow 狀態</td><td><code>Completed</code></td><td>Workflow 詳情頁頂部</td></tr>
+  <tr><td>Activity 數量</td><td>3 個 Activity 全部 Completed</td><td>Event History</td></tr>
+  <tr><td>Result</td><td><code>published=true</code></td><td>Input and Results 區塊</td></tr>
+</table>
+
+<h2>示範補償流程（FAIL_PUBLISH 環境變數）</h2>
+<p><code>publish_to_storefront</code> 內建一個開關，讓你不需要修改程式碼就能模擬失敗：</p>
+<pre><code># activities.py
+@activity.defn
+async def publish_to_storefront(product_id: str) -> None:
+    if os.getenv("FAIL_PUBLISH"):
+        raise RuntimeError("模擬上架失敗（FAIL_PUBLISH=1）")
+    ...</code></pre>
+
+<div class="steps">
+  <div class="step">
+    <strong>關掉正常 Worker（如果還在跑）</strong>
+    <pre><code>pkill -f "process2_1.worker"</code></pre>
+  </div>
+  <div class="step">
+    <strong>帶環境變數啟動 Worker</strong>
+    <pre><code>FAIL_PUBLISH=1 uv run python -m temporal_learn.process2_1.worker</code></pre>
+  </div>
+  <div class="step">
+    <strong>送出新的 Workflow</strong>
+    <pre><code>uv run python -m temporal_learn.process2_1.starter</code></pre>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單（補償路徑）</h2>
+<table>
+  <tr><th>檢查項目</th><th>預期結果</th><th>在哪裡看</th></tr>
+  <tr><td>Workflow 狀態</td><td><code>Completed</code>（不是 Failed）</td><td>Workflow 詳情頁頂部</td></tr>
+  <tr><td>Event History</td><td>create ✓ → setup ✓ → publish ✗ × 2 → unpublish ✓ → revert ✓ → delete ✓</td><td>Event History</td></tr>
+  <tr><td>Result</td><td><code>published=false</code></td><td>Input and Results 區塊</td></tr>
+</table>
+
+<div class="callout-ok callout">
+  <strong>為什麼 Workflow 狀態是 Completed 不是 Failed？</strong><br>
+  因為 Workflow 在失敗時仍然 <code>return ProductPublishResult(published=False, ...)</code>，有回傳值就是 Completed。<br>
+  若要讓 Workflow 變成 Failed 狀態，需要讓 exception 往上冒泡而不是 catch 住。兩種做法都合理，取決於業務需求。
+</div>
+
+<h2>程式碼解說</h2>
+
+<div class="file-order">
+  <strong>閱讀順序：models → activities → workflow → worker → starter</strong>
+  <ol>
+    <li><code>models.py</code>：<code>ProductInput</code> 與 <code>ProductPublishResult</code> 定義流程輸入與結果。</li>
+    <li><code>activities.py</code>：列出正向操作與補償操作。</li>
+    <li><code>workflow.py</code>：<code>ProductOnboardingWorkflow.run</code> 直接維護補償清單。</li>
+    <li><code>worker.py</code>：註冊商品上架 Workflow 與六個 Activity。</li>
+    <li><code>starter.py</code>：送出商品上架請求。</li>
+  </ol>
+</div>
+
+<h3>activities.py — Activity 清單</h3>
+<table>
+  <tr><th>Activity</th><th>用途</th></tr>
+  <tr><td><code>create_or_update_product</code></td><td>建立或更新商品主資料。</td></tr>
+  <tr><td><code>setup_pricing_and_availability</code></td><td>設定價格與可售狀態。</td></tr>
+  <tr><td><code>publish_to_storefront</code></td><td>將商品上架到店面，可用 <code>FAIL_PUBLISH</code> 模擬失敗。</td></tr>
+  <tr><td><code>delete_product</code></td><td>補償 <code>create_or_update_product</code>。</td></tr>
+  <tr><td><code>revert_pricing_and_availability</code></td><td>補償價格與庫存設定。</td></tr>
+  <tr><td><code>unpublish_from_storefront</code></td><td>補償店面上架。</td></tr>
+</table>
+<p>這個教學版的 Activity 範例只傳真正需要的 <code>product_id</code>。Workflow 仍然接收完整 <code>ProductInput</code>，但不把整包 input 傳給每個 Activity；真實系統如果需要商品名稱、價格、庫存等欄位，可以改成傳明確的 command/data object。</p>
+
+<div class="code-explain">
+  <div class="code-explain-row">
+    <div class="code-pane">
+      <h3>workflow.py — 直接維護補償清單</h3>
+      <pre><code># workflow.ActivityConfig 是 SDK 內建的 TypedDict，提供 activity 選項的型別檢查
+_ACT_CFG: workflow.ActivityConfig = {
+    "schedule_to_close_timeout": timedelta(seconds=15),
+    "retry_policy": _RETRY,
+}
+
+compensations: list[Callable[[], Awaitable[None]]] = []
+try:
+    product_id = input.request_id
+    compensations.append(
+        lambda: workflow.execute_activity(delete_product, product_id, **_ACT_CFG)
+    )
+    product_id = await workflow.execute_activity(
+        create_or_update_product, product_id, **_ACT_CFG
+    )
+
+    compensations.append(
+        lambda: workflow.execute_activity(
+            revert_pricing_and_availability, product_id, **_ACT_CFG
+        )
+    )
+    await workflow.execute_activity(
+        setup_pricing_and_availability, product_id, **_ACT_CFG
+    )
+    # ...
+except Exception as e:
+    for compensate in reversed(compensations):
+        await compensate()
+    return ProductPublishResult(published=False, message=f"...{e}")</code></pre>
+    </div>
+    <div class="connector" aria-hidden="true"></div>
+    <div class="explain-pane">
+      <div class="callout">
+        <strong>這裡沒有使用自製 helper</strong><br>
+        Temporal 的核心概念是 Workflow 編排 Activity。補償也是 Activity，所以教材直接把補償清單寫在 Workflow 裡：正向 Activity 執行前先加入一個安全補償 callback，後面失敗時用 <code>reversed(compensations)</code> 反向呼叫。
+      </div>
+
+      <div class="callout-err callout">
+        <strong>先登記的前提</strong><br>
+        補償 Activity 必須是 idempotent / conditional：<code>delete_product</code> 遇到商品不存在要視為成功，<code>revert_pricing_and_availability</code> 遇到價格尚未設定要視為成功，<code>unpublish_from_storefront</code> 遇到尚未上架要視為成功。
+      </div>
+    </div>
+  </div>
+
+  <div class="code-explain-row">
+    <div class="code-pane">
+      <h3>activities.py — 正向操作 vs 補償操作</h3>
+      <table>
+        <tr><th>正向操作</th><th>補償操作</th><th>說明</th></tr>
+        <tr><td>create_or_update_product</td><td>delete_product</td><td>建立 → 刪除</td></tr>
+        <tr><td>setup_pricing_and_availability</td><td>revert_pricing_and_availability</td><td>設價格 → 還原價格</td></tr>
+        <tr><td>publish_to_storefront</td><td>unpublish_from_storefront</td><td>上架 → 下架</td></tr>
+      </table>
+    </div>
+    <div class="connector" aria-hidden="true"></div>
+    <div class="explain-pane">
+      <p class="explain-note">補償要用反向順序執行。越晚完成的正向操作，通常越依賴前面的狀態，所以失敗時要先回滾最後一步，再逐步往前還原。</p>
+    </div>
+  </div>
+</div>
+
+<h2>注意事項</h2>
+
+<div class="callout-err callout">
+  <strong>補償機制 ≠ Transaction</strong><br>
+  補償機制提供的是「最終一致性」，不是 ACID 的原子性。在補償還沒執行完之前，系統處於「不一致」的中間狀態。<br>
+  例如：商品已建立但尚未刪除的短暫時間窗口中，使用者可能看到一個半成品。
+</div>
+
+<div class="callout">
+  <strong>補償操作也可能失敗</strong><br>
+  這份範例直接在 Workflow 裡依序呼叫補償 Activity；如果補償 Activity 失敗，Workflow 會照一般 Activity 失敗規則進入 retry 或失敗處理。在實務上：
+  <ul>
+    <li>補償操作本身也應該有 Retry Policy</li>
+    <li>補償操作也應該是 idempotent 的</li>
+    <li>如果補償也全部失敗，可能需要人工介入（記錄到 dead letter queue 或告警系統）</li>
+  </ul>
+</div>
+
+<div class="callout">
+  <strong>Workflow 回傳 Result 而不是拋出 Exception</strong><br>
+  這個 Workflow 在失敗時仍然回傳 <code>ProductPublishResult(published=False, ...)</code>，而不是讓 Exception 冒泡。<br>
+  這表示 Workflow 的最終狀態是 <code>Completed</code>（不是 <code>Failed</code>），讓呼叫端可以從 result 判斷業務邏輯的成敗。<br>
+  這是一個設計選擇：有些團隊偏好讓 Workflow Failed 來觸發告警，有些偏好用結果欄位來區分。
+</div>
+
+<h2>延伸練習</h2>
+<ol>
+  <li>把補償迴圈改成順序錯誤的正向執行，觀察為什麼必須先還原價格再刪商品</li>
+  <li>讓第 1 步（create_or_update_product）就失敗，確認仍會執行已先登記的安全補償 <code>delete_product</code></li>
+  <li>讓 <code>delete_product</code>（補償操作）也拋出 Exception，觀察 Workflow 最終狀態與 Event History</li>
+</ol>
+
+<script src="workshop.js"></script>
+</body>
+</html>

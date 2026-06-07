@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 9 — Workflow 版本管理（Patched / Versioning）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  .callout-err { border-left-color: var(--err); background: #fdecec; }
+  .step { counter-increment: step-counter; position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+  .step::before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: var(--accent); color: var(--bg); width: 1.8rem; height: 1.8rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: .9rem; }
+  .steps { counter-reset: step-counter; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  a { color: var(--accent); }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 9 — Workflow 版本管理</h1>
+<p><span class="tag">workflow.patched()</span><span class="tag">Versioning</span><span class="tag">Determinism</span></p>
+
+<h2>學習目標</h2>
+<ul>
+  <li>理解為什麼 Workflow 需要版本管理：修改 Workflow 邏輯可能破壞正在執行的 Workflow</li>
+  <li>學會使用 <code>workflow.patched()</code> 安全地演進 Workflow 邏輯</li>
+  <li>理解 Non-Deterministic Error 的成因與解法</li>
+</ul>
+
+<h2>為什麼需要版本管理？</h2>
+
+<div class="callout-err callout">
+  <strong>核心問題</strong><br>
+  Temporal 靠 Event History 的 <strong>replay</strong> 來恢復 Workflow 的狀態。<br>
+  如果你修改了 Workflow 的邏輯（例如新增一個 Activity），舊的 Event History 和新的程式碼對不上，Temporal 會拋出 <strong>Non-Deterministic Error</strong>。<br><br>
+  範例：
+  <ul>
+    <li>v1：Activity A → Activity B</li>
+    <li>v2：Activity A → <strong>Activity C</strong> → Activity B</li>
+  </ul>
+  v1 的 Event History 中沒有 Activity C 的事件，但 v2 的程式碼期望它存在 → 爆炸。
+</div>
+
+<h2>流程概念</h2>
+<p class="flow-hint">流程圖區塊可拖曳右下角放大，較長的圖也可水平捲動。</p>
+<pre><code>@workflow.run
+async def run(self, name: str) -> str:
+    if workflow.patched("greet-change-v2"):      # 最新版本
+        return f"Hey {name}"
+    elif workflow.patched("greet-change-v1"):     # 前一版
+        return f"Hi {name}"
+    else:                                         # 最初版本
+        return f"Hello {name}"</code></pre>
+
+<table>
+  <tr><th>Workflow 啟動時的程式碼版本</th><th>結果</th></tr>
+  <tr><td>沒有任何 patch（最初版本）</td><td>"Hello Alice"</td></tr>
+  <tr><td>有 greet-change-v1</td><td>"Hi Alice"</td></tr>
+  <tr><td>有 greet-change-v1 + greet-change-v2</td><td>"Hey Alice"</td></tr>
+</table>
+
+<div class="callout-ok callout">
+  <strong>實際原始碼位置</strong><br>
+  本頁範例位於 <code>src/temporal_learn/process9/</code>；執行指令中的 <code>temporal_learn.process9</code> 是對應的 Python module path。
+</div>
+
+<h2>啟動方式</h2>
+<div class="steps">
+  <div class="step">
+    <strong>啟動 Temporal Server</strong>
+    <pre><code>temporal server start-dev</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Worker</strong>
+    <pre><code>uv run python -m temporal_learn.process9.worker</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Workflow</strong>
+    <pre><code>uv run python -m temporal_learn.process9.starter</code></pre>
+  </div>
+  <div class="step">
+    <strong>在 Web UI 觀察</strong>
+    <p>打開 <a href="http://localhost:8233" target="_blank">http://localhost:8233</a>，找到 <code>wf-ver-demo-1</code>。</p>
+    <p>查看 Event History，會看到 <code>MarkerRecorded</code> 事件，這就是 patch 的標記。</p>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單</h2>
+<table>
+  <tr><th>檢查項目</th><th>預期結果</th><th>在哪裡看</th></tr>
+  <tr><td>Workflow 狀態</td><td><code>Completed</code></td><td>Workflow 詳情頁頂部</td></tr>
+  <tr><td>Result</td><td>"Hey Alice"（當前最新版本的邏輯）</td><td>Workflow Result</td></tr>
+  <tr><td>Patch Marker</td><td>Event History 中有 <code>MarkerRecorded</code> 事件，payload 中包含 patch ID</td><td>Event History → 展開 MarkerRecorded</td></tr>
+</table>
+
+<h2>程式碼解說</h2>
+
+<div class="file-order">
+  <strong>閱讀順序：models → activities → workflow → worker → starter</strong>
+  <ol>
+    <li><code>models.py</code>：本流程未使用額外資料模型。</li>
+    <li><code>activities.py</code>：本流程沒有 Activity，重點是 Workflow replay 與版本分支。</li>
+    <li><code>workflow.py</code>：<code>VerWorkflow.run</code> 使用 <code>workflow.patched()</code> 管理版本。</li>
+    <li><code>worker.py</code>：註冊版本管理示範 Workflow。</li>
+    <li><code>starter.py</code>：啟動版本管理示範 Workflow。</li>
+  </ol>
+</div>
+
+<h3>activities.py — Activity 清單</h3>
+<table>
+  <tr><th>Activity</th><th>用途</th></tr>
+  <tr><td colspan="2">本流程沒有 Activity。</td></tr>
+</table>
+
+<h3>workflow.patched() 的運作原理</h3>
+<pre><code>if workflow.patched("greet-change-v2"):
+    # 新邏輯
+else:
+    # 舊邏輯</code></pre>
+
+<div class="callout-ok callout">
+  <strong>workflow.patched() 做了什麼？</strong>
+  <ul>
+    <li><strong>新的 Workflow Execution</strong>（首次執行）：<code>patched()</code> 回傳 <code>True</code>，並在 Event History 中記錄一個 Marker 事件</li>
+    <li><strong>Replay 舊的 Workflow Execution</strong>：檢查 History 中有沒有這個 patch 的 Marker
+      <ul>
+        <li>有 Marker → 回傳 <code>True</code>（走新邏輯）</li>
+        <li>沒有 Marker → 回傳 <code>False</code>（走舊邏輯）</li>
+      </ul>
+    </li>
+  </ul>
+  這樣同一份程式碼就能同時相容新舊版本的 Workflow Execution。
+</div>
+
+<h3>版本演進的過程</h3>
+<pre><code># === 階段 1：最初的程式碼 ===
+async def run(self, name: str) -> str:
+    return f"Hello {name}"
+
+# === 階段 2：加入 v1 ===
+async def run(self, name: str) -> str:
+    if workflow.patched("greet-change-v1"):
+        return f"Hi {name}"       # 新的 Workflow 走這
+    else:
+        return f"Hello {name}"    # 舊的 Workflow replay 走這
+
+# === 階段 3：加入 v2 ===
+async def run(self, name: str) -> str:
+    if workflow.patched("greet-change-v2"):
+        return f"Hey {name}"      # 最新
+    elif workflow.patched("greet-change-v1"):
+        return f"Hi {name}"       # v1
+    else:
+        return f"Hello {name}"    # 原始
+
+# === 階段 4：確認所有舊 Workflow 都已完成後，清理 ===
+async def run(self, name: str) -> str:
+    return f"Hey {name}"          # 安全移除所有 patched() 分支</code></pre>
+
+<h2>注意事項</h2>
+
+<div class="callout-err callout">
+  <strong>什麼時候可以移除 patched() 分支？</strong><br>
+  只有在確認<strong>所有</strong>使用舊邏輯的 Workflow Execution 都已經完成（Completed / Failed / Cancelled / Terminated）之後，才能安全移除舊的分支。<br>
+  如果還有舊的 Workflow 在 Running 狀態，移除舊分支會導致那些 Workflow 的 replay 失敗。
+</div>
+
+<div class="callout">
+  <strong>patched() 的替代方案</strong><br>
+  <table>
+    <tr><th>方案</th><th>適用場景</th><th>說明</th></tr>
+    <tr><td><code>workflow.patched()</code></td><td>小幅修改，需要向後相容</td><td>同一份程式碼支援新舊邏輯</td></tr>
+    <tr><td>Worker Versioning</td><td>大幅重構</td><td>用不同的 Task Queue 或 Build ID 隔離新舊 Worker</td></tr>
+    <tr><td>新的 Workflow Type</td><td>完全不同的流程</td><td>定義新的 Workflow class，不影響舊的</td></tr>
+  </table>
+</div>
+
+<div class="callout">
+  <strong>Patch ID 命名</strong><br>
+  Patch ID（例如 <code>"greet-change-v2"</code>）是一個自定義字串。建議有意義的命名，因為它會出現在 Event History 的 Marker 中，方便日後除錯。
+</div>
+
+<h2>延伸練習</h2>
+<ol>
+  <li>把 <code>return f"Hey {name}"</code> 改成呼叫一個 Activity（例如查資料庫取得最新的 greeting 模板），體會為什麼這類修改特別需要 <code>patched()</code></li>
+  <li>嘗試在不用 <code>patched()</code> 的情況下修改一個正在執行的 Workflow 的邏輯，觀察 Non-Deterministic Error 長什麼樣子</li>
+  <li>用 <code>workflow.deprecate_patch()</code> 標記一個 patch 為已棄用，這是清理路徑中的中間步驟</li>
+</ol>
+
+<script src="workshop.js"></script>
+</body>
+</html>

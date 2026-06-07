@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 5 — 庫存管理實體（Entity Pattern + Continue-As-New）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  .callout-err { border-left-color: var(--err); background: #fdecec; }
+  .step { counter-increment: step-counter; position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+  .step::before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: var(--accent); color: var(--bg); width: 1.8rem; height: 1.8rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: .9rem; }
+  .steps { counter-reset: step-counter; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  a { color: var(--accent); }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 5 — 庫存管理實體（Entity Pattern）</h1>
+<p><span class="tag">Entity Pattern</span><span class="tag">Signal</span><span class="tag">Update</span><span class="tag">Query</span><span class="tag">Continue-As-New</span></p>
+
+<h2>學習目標</h2>
+<ul>
+  <li>理解 Entity Workflow：長期存活的有狀態 Workflow，等同於一個持久化的「物件」</li>
+  <li>區分三種外部互動方式：Signal（非同步）、Update（同步）、Query（唯讀）</li>
+  <li>學會 <code>continue_as_new</code> 防止 Event History 無限增長</li>
+  <li>理解 inbox pattern：用佇列收集命令，在主迴圈中依序處理</li>
+</ul>
+
+<h2>流程概念</h2>
+<p class="flow-hint">流程圖區塊可拖曳右下角放大，較長的圖也可水平捲動。</p>
+<pre><code>┌─────────────────────────────────────────────────────┐
+│  InventoryEntityWorkflow（長期存活）                    │
+│                                                     │
+│  while True:                                        │
+│    等待 inbox 有命令 OR history 太長需要 continue-as-new  │
+│    處理 inbox 中的所有命令（RESTOCK / PURCHASE）         │
+│    如果 history 太長 → continue_as_new(保留當前狀態)     │
+│                                                     │
+│  外部介面：                                           │
+│    signal submit(command)  → 非同步送命令               │
+│    update invoke(command)  → 同步送命令，等結果回傳      │
+│    query  get_stock()      → 讀取當前庫存               │
+└─────────────────────────────────────────────────────┘</code></pre>
+
+<div class="callout-ok callout">
+  <strong>實際原始碼位置</strong><br>
+  本頁範例位於 <code>src/temporal_learn/process5/</code>；執行指令中的 <code>temporal_learn.process5</code> 是對應的 Python module path。
+</div>
+
+<h2>啟動方式</h2>
+<div class="steps">
+  <div class="step">
+    <strong>啟動 Temporal Server</strong>
+    <pre><code>temporal server start-dev</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Worker</strong>
+    <pre><code>uv run python -m temporal_learn.process5.worker</code></pre>
+  </div>
+  <div class="step">
+    <strong>執行 Starter（含互動測試）</strong>
+    <pre><code>uv run python -m temporal_learn.process5.starter</code></pre>
+    <p>starter 會依序：啟動 Workflow（初始庫存 10000）→ 查詢庫存 → Signal 補貨 3 次 → 查詢更新後庫存 → 50 QPS 壓測購買 5 秒。</p>
+  </div>
+  <div class="step">
+    <strong>在 Web UI 觀察</strong>
+    <p>打開 <a href="http://localhost:8233" target="_blank">http://localhost:8233</a>，找到 <code>inventory:sku-123</code>。</p>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單</h2>
+<table>
+  <tr><th>檢查項目</th><th>預期結果</th><th>在哪裡看</th></tr>
+  <tr><td>Workflow 狀態</td><td><code>Running</code>（Entity 持續存活）</td><td>Workflow 詳情頁頂部</td></tr>
+  <tr><td>Signal 事件</td><td>看到多個 <code>WorkflowSignalReceived</code> 事件（submit）</td><td>Event History</td></tr>
+  <tr><td>Update 事件</td><td>看到多個 <code>WorkflowExecutionUpdateAccepted</code> + <code>Completed</code> 事件（invoke）</td><td>Event History</td></tr>
+  <tr><td>Query</td><td>可以在 Web UI 的 Query 面板輸入 <code>get_stock</code> 即時查詢庫存</td><td>Workflow 詳情頁 → Query 分頁</td></tr>
+  <tr><td>Continue-As-New</td><td>如果壓測夠久，會看到 <code>WorkflowExecutionContinuedAsNew</code> 事件</td><td>Event History</td></tr>
+</table>
+
+<h2>程式碼解說</h2>
+
+<div class="file-order">
+  <strong>閱讀順序：models → activities → workflow → worker → starter</strong>
+  <ol>
+    <li><code>models.py</code>：<code>Command</code>、<code>CommandType</code>、<code>CommandResult</code> 定義庫存命令。</li>
+    <li><code>activities.py</code>：真正修改庫存並處理業務錯誤。</li>
+    <li><code>workflow.py</code>：Entity Workflow 維護 inbox、狀態與 continue-as-new。</li>
+    <li><code>worker.py</code>：註冊庫存 Workflow 與 Activity instance。</li>
+    <li><code>starter.py</code>：啟動庫存實體並示範 Signal、Update、Query。</li>
+  </ol>
+</div>
+
+<h3>activities.py — Activity 清單</h3>
+<table>
+  <tr><th>Activity</th><th>用途</th></tr>
+  <tr><td><code>restock</code></td><td>補貨並回傳新的庫存數量。</td></tr>
+  <tr><td><code>purchase</code></td><td>扣庫存；庫存不足時拋出不可重試的業務錯誤。</td></tr>
+</table>
+
+<h3>workflow.py — 主迴圈</h3>
+<pre><code>@workflow.run
+async def run(self, product_id: str, initial_stock: int = 0) -> None:
+    self._product_id = product_id
+    if initial_stock > 0:
+        self._cached_stock = await workflow.execute_activity_method(
+            InventoryActivities.restock,
+            args=[product_id, initial_stock, f"INIT-{product_id}"],
+            **_ACT_CFG,
+        )
+
+    while True:
+        # 等待條件：inbox 有東西，或 Temporal 建議 continue-as-new
+        await workflow.wait_condition(
+            lambda: self._inbox
+            or workflow.info().is_continue_as_new_suggested
+        )
+
+        # 處理所有待處理的命令
+        while self._inbox:
+            command = self._inbox.popleft()
+            result = await self._process_command(command)
+            self._results[command.op_key] = result
+
+        # History 太長，做 continue-as-new
+        if workflow.info().is_continue_as_new_suggested:
+            await workflow.wait_condition(workflow.all_handlers_finished)
+            workflow.continue_as_new(args=[self._product_id, self._cached_stock])</code></pre>
+
+<div class="callout-err callout">
+  <strong>為什麼需要 continue_as_new？</strong><br>
+  Temporal 的 Event History 會隨著每個 Activity、Signal、Update 不斷增長。<br>
+  當 History 太大時（預設建議門檻約 2000 個事件）：
+  <ul>
+    <li>Replay 時間變長（Worker 重啟後要 replay 整個 history）</li>
+    <li>佔用更多 Temporal Server 的儲存空間</li>
+  </ul>
+  <code>continue_as_new</code> 會結束當前 Workflow 並立即啟動一個<strong>全新的 Workflow Execution</strong>（保持相同的 Workflow ID），帶著你給的參數重新開始，Event History 歸零。<br><br>
+  <code>workflow.info().is_continue_as_new_suggested</code> 是 Temporal 內建的建議信號。
+</div>
+
+<h3>三種互動方式比較</h3>
+<pre><code># Signal — 非同步，fire-and-forget
+@workflow.signal
+def submit(self, command: Command) -> None:
+    self._inbox.append(command)
+
+# Update — 同步，等待結果
+@workflow.update
+async def invoke(self, command: Command) -> CommandResult:
+    self._inbox.append(command)
+    await workflow.wait_condition(lambda: command.op_key in self._results)
+    return self._results.pop(command.op_key)
+
+# Query — 唯讀，不改變 Workflow 狀態
+@workflow.query
+def get_stock(self) -> int:
+    return self._cached_stock</code></pre>
+
+<div class="callout">
+  <strong>Signal vs Update vs Query</strong>
+  <table>
+    <tr><th></th><th>Signal</th><th>Update</th><th>Query</th></tr>
+    <tr><td>方向</td><td>送進</td><td>送進 + 等回覆</td><td>讀出</td></tr>
+    <tr><td>改變狀態</td><td>可以</td><td>可以</td><td>不可以</td></tr>
+    <tr><td>回傳值</td><td>無</td><td>有</td><td>有</td></tr>
+    <tr><td>記錄在 History</td><td>是</td><td>是</td><td>否</td></tr>
+    <tr><td>適用場景</td><td>通知、觸發</td><td>RPC、需要確認的操作</td><td>查詢狀態</td></tr>
+  </table>
+</div>
+
+<h3>Inbox Pattern</h3>
+<div class="callout-ok callout">
+  <strong>為什麼不直接在 Signal/Update handler 中執行 Activity？</strong><br>
+  Signal handler 和 Update handler 在 Temporal 中有特殊的執行語義。把所有命令先收到 inbox（deque），再在主迴圈中依序處理，有幾個好處：
+  <ul>
+    <li><strong>序列化處理</strong>：避免併發修改 <code>_cached_stock</code> 導致的 race condition</li>
+    <li><strong>統一的控制流</strong>：continue-as-new 的判斷只需要在一個地方</li>
+    <li><strong>可預測的 replay</strong>：所有 Activity 都在 <code>@workflow.run</code> 的上下文中執行</li>
+  </ul>
+</div>
+
+<h3>Continue-As-New 前的安全檢查</h3>
+<pre><code>if workflow.info().is_continue_as_new_suggested:
+    await workflow.wait_condition(workflow.all_handlers_finished)  # 等所有 handler 完成
+    workflow.continue_as_new(args=[self._product_id, self._cached_stock])</code></pre>
+
+<div class="callout-err callout">
+  <strong>all_handlers_finished 很重要！</strong><br>
+  如果在 Update handler 還在等待結果時就 continue-as-new，那個 Update 呼叫會收到錯誤。<br>
+  <code>workflow.all_handlers_finished</code> 確保所有正在進行的 Update handler 都已經完成後，才執行 continue-as-new。
+</div>
+
+<h3>非可重試的錯誤</h3>
+<pre><code>_RETRY = RetryPolicy(
+    non_retryable_error_types=["InvalidInput", "StockError"],
+)</code></pre>
+<p>當 Activity 拋出 <code>ApplicationError(type="InvalidInput")</code> 時，Temporal 不會重試——因為業務邏輯錯誤重試也不會成功。</p>
+
+<h2>注意事項</h2>
+
+<div class="callout">
+  <strong>Entity Workflow 的 Workflow ID 設計</strong><br>
+  <code>id=f"inventory:{product_id}"</code> 用商品 ID 作為 Workflow ID，確保每個商品只有一個 Entity Workflow。<br>
+  如果嘗試用相同 ID 啟動第二個 Workflow，Temporal 會拒絕（WorkflowExecutionAlreadyStarted）。<br>
+  這就是 Entity 模式的核心：<strong>Workflow ID 就是實體的 primary key</strong>。
+</div>
+
+<div class="callout">
+  <strong>continue_as_new 後的 Workflow ID</strong><br>
+  continue-as-new 後，Workflow ID 保持不變。外部客戶端可以繼續用相同的 ID 發送 Signal/Update/Query。<br>
+  對外部來說，continue-as-new 是透明的。
+</div>
+
+<h2>延伸練習</h2>
+<ol>
+  <li>加入一個 <code>get_history</code> Query，回傳最近 N 筆交易記錄</li>
+  <li>加入 Update validator：拒絕數量超過 10000 的操作</li>
+  <li>修改 starter 的壓測參數（提高 QPS 或延長時間），觸發 continue-as-new，在 Web UI 中觀察舊 Workflow 的 <code>ContinuedAsNew</code> 狀態和新 Workflow 的開始</li>
+</ol>
+
+<script src="workshop.js"></script>
+</body>
+</html>

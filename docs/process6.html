@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 6 — Workflow 取消（Cancellation）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  .callout-err { border-left-color: var(--err); background: #fdecec; }
+  .step { counter-increment: step-counter; position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+  .step::before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: var(--accent); color: var(--bg); width: 1.8rem; height: 1.8rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: .9rem; }
+  .steps { counter-reset: step-counter; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  a { color: var(--accent); }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 6 — Workflow 取消</h1>
+<p><span class="tag">Cancellation</span><span class="tag">CancelledError</span><span class="tag">Cleanup</span></p>
+
+<h2>學習目標</h2>
+<ul>
+  <li>理解 Temporal 的取消機制：外部發送取消請求 → Workflow 收到 <code>CancelledError</code></li>
+  <li>學會在取消時做清理工作（cleanup）</li>
+  <li>理解取消請求是「協作式」的——Workflow 可以決定如何回應</li>
+</ul>
+
+<h2>流程概念</h2>
+<p class="flow-hint">流程圖區塊可拖曳右下角放大，較長的圖也可水平捲動。</p>
+<pre><code>Client                    Workflow
+  │                         │
+  ├── start_workflow() ────→│  開始等待 2 小時
+  │                         │  (asyncio.sleep(7200))
+  ├── handle.cancel() ─────→│
+  │                         │  收到 CancelledError
+  │                         │  執行 cleanup（print）
+  │                         │  re-raise → Workflow 結束
+  │                         │
+  │         狀態: Cancelled  │</code></pre>
+
+<div class="callout-ok callout">
+  <strong>實際原始碼位置</strong><br>
+  本頁範例位於 <code>src/temporal_learn/process6/</code>；執行指令中的 <code>temporal_learn.process6</code> 是對應的 Python module path。
+</div>
+
+<h2>啟動方式</h2>
+<div class="steps">
+  <div class="step">
+    <strong>啟動 Temporal Server</strong>
+    <pre><code>temporal server start-dev</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動 Worker</strong>
+    <pre><code>uv run python -m temporal_learn.process6.worker</code></pre>
+  </div>
+  <div class="step">
+    <strong>啟動並立即取消</strong>
+    <pre><code>uv run python -m temporal_learn.process6.client_cancel</code></pre>
+    <p>這個 script 會啟動 Workflow 然後<strong>立即送出取消請求</strong>。</p>
+  </div>
+  <div class="step">
+    <strong>在 Web UI 觀察</strong>
+    <p>打開 <a href="http://localhost:8233" target="_blank">http://localhost:8233</a>，找到 <code>wf-cancel-demo-1</code>。</p>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單</h2>
+<table>
+  <tr><th>檢查項目</th><th>預期結果</th><th>在哪裡看</th></tr>
+  <tr><td>Workflow 狀態</td><td><code>Cancelled</code></td><td>Workflow 詳情頁頂部</td></tr>
+  <tr><td>Event History</td><td>最後有 <code>WorkflowExecutionCancelRequested</code> 和 <code>WorkflowExecutionCanceled</code></td><td>Event History</td></tr>
+  <tr><td>Worker 輸出</td><td>印出 "scope two" 和 "out"（cleanup 有被執行）</td><td>Worker 終端</td></tr>
+</table>
+
+<h2>程式碼解說</h2>
+
+<div class="file-order">
+  <strong>閱讀順序：models → activities → workflow → worker → starter</strong>
+  <ol>
+    <li><code>models.py</code>：本流程未使用額外資料模型。</li>
+    <li><code>activities.py</code>：本流程沒有 Activity，重點在 Workflow 取消。</li>
+    <li><code>workflow.py</code>：<code>MyWorkflow.run</code> 示範收到 <code>CancelledError</code> 後 cleanup 並 re-raise。</li>
+    <li><code>worker.py</code>：註冊取消示範 Workflow。</li>
+    <li><code>client_cancel.py</code>：扮演 starter，啟動 Workflow 後送出取消請求。</li>
+  </ol>
+</div>
+
+<h3>activities.py — Activity 清單</h3>
+<table>
+  <tr><th>Activity</th><th>用途</th></tr>
+  <tr><td colspan="2">本流程沒有 Activity。</td></tr>
+</table>
+
+<h3>workflow.py — 處理取消</h3>
+<pre><code>@workflow.defn
+class MyWorkflow:
+    @workflow.run
+    async def run(self, s: str) -> str:
+        try:
+            print("scope one")
+            await asyncio.sleep(7200)     # 等待 2 小時
+        except asyncio.CancelledError:
+            print("scope two")            # 清理工作
+            print("out")
+            raise                         # 必須 re-raise！
+        return "zero"</code></pre>
+
+<div class="callout-err callout">
+  <strong>必須 re-raise CancelledError</strong><br>
+  如果你 catch 了 <code>CancelledError</code> 但不 re-raise，Workflow 會繼續執行而不是被取消。<br>
+  在 try/except 中做完清理工作後，一定要 <code>raise</code> 把 CancelledError 傳遞出去，讓 Temporal 正確標記 Workflow 為 <code>Cancelled</code> 狀態。
+</div>
+
+<h3>client_cancel.py — 發送取消請求</h3>
+<pre><code>handle = await client.start_workflow(
+    MyWorkflow.run,
+    "payload",
+    id="wf-cancel-demo-1",
+    task_queue=TASK_QUEUE,
+)
+await handle.cancel()      # 發送取消請求
+print("Cancel request sent.")</code></pre>
+
+<div class="callout">
+  <strong>cancel() 是非同步的</strong><br>
+  <code>handle.cancel()</code> 只是<strong>發送取消請求</strong>，不代表 Workflow 立即結束。<br>
+  Workflow 會在下一個 <code>await</code> 點收到 <code>CancelledError</code>。如果 Workflow 正在執行一段不含 <code>await</code> 的同步程式碼，取消會被延遲到下一個 <code>await</code>。
+</div>
+
+<h2>注意事項</h2>
+
+<div class="callout">
+  <strong>取消是「協作式」的（Cooperative Cancellation）</strong><br>
+  Temporal 不會強制殺掉 Workflow。取消請求被轉換成 <code>CancelledError</code> 拋進 Workflow 的 async 執行流中。<br>
+  Workflow 可以：
+  <ul>
+    <li><strong>接受取消</strong>：catch → cleanup → re-raise（本範例的做法）</li>
+    <li><strong>忽略取消</strong>：catch → 不 raise → 繼續執行（不推薦，但在某些場景有用）</li>
+    <li><strong>部分取消</strong>：catch → 完成必要的步驟 → 再 raise</li>
+  </ul>
+</div>
+
+<div class="callout">
+  <strong>取消傳播到 Activity</strong><br>
+  如果 Workflow 被取消時正在執行一個 Activity：
+  <ul>
+    <li>Workflow 層會收到 <code>CancelledError</code></li>
+    <li>Activity 本身會收到 cancellation（透過 <code>activity.is_cancelled()</code> 或心跳機制）</li>
+    <li>Activity 的取消也是協作式的——Activity 需要自行檢查並退出</li>
+  </ul>
+</div>
+
+<div class="callout-ok callout">
+  <strong>也可以從 Web UI 取消</strong><br>
+  在 Workflow 詳情頁的右上角有 "Terminate" 和 "Cancel" 按鈕。<br>
+  <ul>
+    <li><strong>Cancel</strong>：發送取消請求（協作式，Workflow 可以做 cleanup）</li>
+    <li><strong>Terminate</strong>：強制終止（Workflow 沒有機會做 cleanup）</li>
+  </ul>
+</div>
+
+<h2>延伸練習</h2>
+<ol>
+  <li>在 catch 區塊中加入一個 Activity（例如寄取消通知 email），看看取消時是否能執行 Activity</li>
+  <li>嘗試不 re-raise CancelledError，觀察 Workflow 的最終狀態是 <code>Completed</code> 而不是 <code>Cancelled</code></li>
+  <li>用 Web UI 的 Terminate 功能終止一個 Workflow，比較 Terminate 和 Cancel 在 Event History 中的差異</li>
+</ol>
+
+<script src="workshop.js"></script>
+</body>
+</html>

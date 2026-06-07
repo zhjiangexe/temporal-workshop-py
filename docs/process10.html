@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Process 10 — Activity 取消偵測（Cancellation Scope in Activity）</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  h3 { color: var(--ok); margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  .callout-err { border-left-color: var(--err); background: #fdecec; }
+  .step { counter-increment: step-counter; position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+  .step::before { content: counter(step-counter); position: absolute; left: 0; top: 0; background: var(--accent); color: var(--bg); width: 1.8rem; height: 1.8rem; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: .9rem; }
+  .steps { counter-reset: step-counter; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  a { color: var(--accent); }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Process 10 — Activity 取消偵測</h1>
+<p><span class="tag">Activity Cancellation</span><span class="tag">Heartbeat</span><span class="tag">CancelledError in Activity</span></p>
+
+<h2>學習目標</h2>
+<ul>
+  <li>理解 Activity 層級的取消機制：Heartbeat 如何觸發 Activity 取消</li>
+  <li>學會在長時間 Activity 中正確處理取消</li>
+  <li>區分 Workflow 取消（Process 6）和 Activity 取消</li>
+</ul>
+
+<h2>流程概念</h2>
+<p class="flow-hint">流程圖區塊可拖曳右下角放大，較長的圖也可水平捲動。</p>
+<pre><code>Client 送出取消請求
+        ↓
+Workflow 收到取消並要求 Activity 取消
+        ↓
+long_running_act 下一次 heartbeat 或 await
+        ↓
+Activity 收到 CancelledError 並結束
+        ↓
+Workflow 進入 Cancelled 狀態</code></pre>
+
+<h2>與 Process 4 的對比</h2>
+<table>
+  <tr><th></th><th>Process 4（Heartbeat + Resume）</th><th>Process 10（Heartbeat + Cancel）</th></tr>
+  <tr><td>重點</td><td>斷點續傳（heartbeat details）</td><td>取消偵測（heartbeat 觸發的 cancellation）</td></tr>
+  <tr><td>heartbeat_timeout</td><td>有（用於偵測 Worker 死亡）</td><td>無（不需要偵測死亡）</td></tr>
+  <tr><td>Heartbeat 用途</td><td>回報進度 + 保存 checkpoint</td><td>檢查是否被取消</td></tr>
+</table>
+
+<div class="callout-ok callout">
+  <strong>實際原始碼位置</strong><br>
+  本頁範例位於 <code>src/temporal_learn/process10/</code>；執行指令中的 <code>temporal_learn.process10</code> 是對應的 Python module path。
+</div>
+
+<h2>啟動方式</h2>
+<div class="steps">
+  <div class="step">
+    <strong>用測試執行（推薦）</strong>
+    <pre><code>uv run pytest tests/test_process10_cancellation.py -v</code></pre>
+  </div>
+  <div class="step">
+    <strong>或手動操作</strong>
+    <pre><code># Terminal 1: 啟動 Worker（需自行建立 worker.py）
+# Terminal 2: 啟動 Workflow
+# Terminal 3: 送取消請求
+temporal workflow cancel --workflow-id YOUR_WF_ID</code></pre>
+  </div>
+  <div class="step">
+    <strong>在 Web UI 觀察</strong>
+    <p>打開 <a href="http://localhost:8233" target="_blank">http://localhost:8233</a>，觀察 Activity 的取消過程。</p>
+  </div>
+</div>
+
+<h2>Web UI 驗證清單</h2>
+<table>
+  <tr><th>檢查項目</th><th>預期結果</th><th>在哪裡看</th></tr>
+  <tr><td>Workflow 被取消時</td><td>Activity 的 heartbeat 觸發 CancelledError</td><td>Worker 終端 log</td></tr>
+  <tr><td>Event History</td><td>ActivityTaskCancelRequested → ActivityTaskCanceled</td><td>Event History</td></tr>
+</table>
+
+<h2>程式碼解說</h2>
+
+<div class="file-order">
+  <strong>閱讀順序：models → activities → workflow → worker → starter</strong>
+  <ol>
+    <li><code>models.py</code>：本流程未使用額外資料模型。</li>
+    <li><code>activities.py</code>：長時間 Activity 用 heartbeat 偵測取消。</li>
+    <li><code>workflow.py</code>：<code>LongActWorkflow.run</code> 啟動可取消的 Activity。</li>
+    <li><code>worker.py</code>：本流程未提供獨立 worker 檔，可用測試或自行建立。</li>
+    <li><code>starter.py</code>：本流程未提供獨立 starter，可用 Temporal CLI 或測試互動。</li>
+  </ol>
+</div>
+
+<h3>activities.py — Activity 清單</h3>
+<table>
+  <tr><th>Activity</th><th>用途</th></tr>
+  <tr><td><code>long_running_act</code></td><td>在迴圈中定期 heartbeat，讓 Activity 能收到取消訊號。</td></tr>
+</table>
+
+<h3>workflow.py</h3>
+<pre><code>@workflow.defn
+class LongActWorkflow:
+    @workflow.run
+    async def run(self) -> None:
+        await workflow.execute_activity(
+            long_running_act,
+            start_to_close_timeout=timedelta(seconds=30),
+        )</code></pre>
+
+<h3>activities.py — Heartbeat 觸發取消偵測</h3>
+<pre><code>@activity.defn
+async def long_running_act() -> str:
+    for i in range(1000):
+        activity.heartbeat(i)        # 這裡會檢查取消！
+        await asyncio.sleep(0.01)
+    return "DONE"</code></pre>
+
+<div class="callout-ok callout">
+  <strong>Heartbeat 的隱藏功能：取消偵測</strong><br>
+  <code>activity.heartbeat()</code> 不只是回報「我還活著」。呼叫 heartbeat 時，SDK 會向 Temporal Server 確認 Activity 的狀態。如果 Workflow 已經被取消（或 Activity 被 cancel），<code>heartbeat()</code> 會在 Activity 中拋出 <code>CancelledError</code>。<br><br>
+  這就是為什麼長時間 Activity 應該定期呼叫 heartbeat——不只是為了偵測 Worker 死亡，也是為了及時響應取消請求。
+</div>
+
+<div class="callout">
+  <strong>如果 Activity 不呼叫 heartbeat？</strong><br>
+  如果一個長時間 Activity 從不呼叫 heartbeat，取消請求會被延遲到 Activity 自然完成或 timeout。Activity 不會被「強制殺死」。<br>
+  只有在 <code>await</code> 點（如 <code>asyncio.sleep</code>）或 <code>activity.heartbeat()</code> 呼叫時，Activity 才有機會收到 <code>CancelledError</code>。
+</div>
+
+<h2>取消流程全貌</h2>
+<pre><code>Client → cancel() → Temporal Server → 標記 Workflow 為 cancel requested
+                                      ↓
+                          Workflow 收到 CancelledError
+                                      ↓
+                          正在執行的 Activity 被標記為 cancel
+                                      ↓
+                          Activity 下次呼叫 heartbeat() 或 await 時
+                          收到 CancelledError
+                                      ↓
+                          Activity 結束 → Workflow 結束
+                          狀態: Cancelled</code></pre>
+
+<h2>注意事項</h2>
+
+<div class="callout-err callout">
+  <strong>asyncio.sleep 也會觸發取消</strong><br>
+  在 Python 的 asyncio 中，<code>await asyncio.sleep()</code> 是一個 cancellation point。當 Activity 被取消時，<code>asyncio.sleep</code> 會拋出 <code>CancelledError</code>。<br>
+  所以即使不呼叫 heartbeat，只要有 <code>await</code>，Activity 也能收到取消。但 heartbeat 提供了更即時、更明確的取消管道。
+</div>
+
+<div class="callout">
+  <strong>在 Activity 中做 cleanup</strong><br>
+  如果 Activity 在取消時需要做清理（例如刪除暫存檔案），可以用 try/except：
+  <pre><code>try:
+    for i in range(1000):
+        activity.heartbeat(i)
+        await asyncio.sleep(0.01)
+except asyncio.CancelledError:
+    # 清理工作
+    cleanup_temp_files()
+    raise  # 仍然要 re-raise</code></pre>
+</div>
+
+<h2>延伸練習</h2>
+<ol>
+  <li>在 Activity 中加入 <code>try/except CancelledError</code>，在取消時印出「已清理 X 筆暫存資料」</li>
+  <li>移除 <code>activity.heartbeat()</code>，只保留 <code>asyncio.sleep</code>，觀察取消是否仍然有效</li>
+  <li>把 <code>asyncio.sleep(0.01)</code> 換成一個同步的 <code>time.sleep(0.01)</code>，觀察取消行為的差異（提示：同步 sleep 不是 cancellation point）</li>
+</ol>
+
+<script src="workshop.js"></script>
+</body>
+</html>
