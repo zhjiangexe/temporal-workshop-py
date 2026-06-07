@@ -79,7 +79,7 @@
 <h2>學習目標</h2>
 <ul>
   <li>認識 Temporal 最基本的 Workflow + Activity 架構</li>
-  <li>理解 <code>execute_activity_method</code> 的參數設定</li>
+  <li>理解 <code>execute_activity</code> 的參數設定</li>
   <li>學會配置 <code>RetryPolicy</code> 和各種 Timeout</li>
   <li>理解為什麼 Activity 要設計成 idempotent</li>
 </ul>
@@ -241,23 +241,23 @@ class RegistrationWorkflow:
   <div class="code-explain-row">
     <div class="code-pane">
       <h3>workflow.py — Step 4：建立帳號</h3>
-      <pre><code>await workflow.execute_activity_method(
-    RegistrationActivities.create_account,
+      <pre><code>await workflow.execute_activity(
+    create_account,
     request,
     **_ACT_CFG,
 )</code></pre>
     </div>
     <div class="connector" aria-hidden="true"></div>
     <div class="explain-pane">
-      <p class="explain-note">第一個 Activity 先建立使用者帳號。因為這個 Activity 是 class method，所以使用 <code>execute_activity_method</code>。這裡直接把整個 <code>request</code> 傳進去。</p>
+      <p class="explain-note">第一個 Activity 先建立使用者帳號。這裡使用 function-based activity，所以用 <code>execute_activity</code>，並直接把整個 <code>request</code> 傳進去。</p>
     </div>
   </div>
 
   <div class="code-explain-row">
     <div class="code-pane">
       <h3>workflow.py — Step 5：新增註冊點數</h3>
-      <pre><code>await workflow.execute_activity_method(
-    RegistrationActivities.add_points,
+      <pre><code>await workflow.execute_activity(
+    add_points,
     args=[
         request.user_id,
         500,
@@ -279,8 +279,8 @@ class RegistrationWorkflow:
   <div class="code-explain-row">
     <div class="code-pane">
       <h3>workflow.py — Step 6：寄歡迎信</h3>
-      <pre><code>await workflow.execute_activity_method(
-    RegistrationActivities.send_email,
+      <pre><code>await workflow.execute_activity(
+    send_email,
     args=[
         request.email,
         f"welcome-{request.user_id}",
@@ -301,18 +301,16 @@ class RegistrationWorkflow:
   <div class="code-explain-row">
     <div class="code-pane">
       <h3>activities.py — 冪等設計</h3>
-      <pre><code>class RegistrationActivities:
-    def __init__(self):
-        self._users: set[str] = set()   # 追蹤已建立的帳號
-        self._ops: set[str] = set()     # 追蹤已完成的操作
+      <pre><code>_demo_users: set[str] = set()   # demo-only：追蹤已建立的帳號
+_demo_ops: set[str] = set()     # demo-only：追蹤已完成的操作
 
-    @activity.defn
-    async def add_points(self, user_id: str, points: int, op_key: str) -> None:
-        dedupe_key = f"POINTS#{user_id}#{op_key}"
-        if dedupe_key in self._ops:     # 已做過就跳過
-            return
-        self._ops.add(dedupe_key)
-        await asyncio.sleep(5)          # 模擬 IO</code></pre>
+@activity.defn
+async def add_points(user_id: str, points: int, op_key: str) -> None:
+    dedupe_key = f"POINTS#{user_id}#{op_key}"
+    if dedupe_key in _demo_ops:         # 已做過就跳過
+        return
+    _demo_ops.add(dedupe_key)
+    await asyncio.sleep(5)              # 模擬 IO</code></pre>
     </div>
     <div class="connector" aria-hidden="true"></div>
     <div class="explain-pane">
@@ -331,7 +329,7 @@ class RegistrationWorkflow:
     client,
     task_queue=TASK_QUEUE,
     workflows=[RegistrationWorkflow],
-    activities=[acts.create_account, acts.add_points, acts.send_email],
+    activities=[create_account, add_points, send_email],
     max_concurrent_activities=50,           # 同時處理的 Activity 上限
     max_concurrent_workflow_tasks=20,       # 同時處理的 Workflow Task 上限
     max_activities_per_second=50.0,         # Activity 速率限制
@@ -358,7 +356,7 @@ class RegistrationWorkflow:
     <li>不能用 <code>time.time()</code>、<code>random.random()</code> → 用 <code>workflow.time()</code>、<code>workflow.random()</code></li>
     <li>不能做 IO（HTTP、DB）→ 所有 IO 放在 Activity 裡</li>
     <li>不能用 <code>threading</code> → 用 <code>asyncio</code></li>
-    <li>import non-deterministic 模組要包在 <code>workflow.unsafe.imports_passed_through()</code></li>
+    <li>教學版先用一般 Python import；正式專案若遇到 workflow sandbox import 問題，再補充 passthrough import</li>
   </ul>
 </div>
 

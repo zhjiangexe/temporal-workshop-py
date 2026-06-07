@@ -5,7 +5,7 @@ from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
 from temporal_learn.process1 import activities as process1_activities
-from temporal_learn.process1.activities import RegistrationActivities
+from temporal_learn.process1.activities import add_points, create_account, send_email
 from temporal_learn.process1.models import RegisterRequest
 from temporal_learn.process1.workflow import RegistrationWorkflow
 
@@ -22,7 +22,7 @@ async def test_registration_workflow_with_real_activities(
     env: WorkflowEnvironment, monkeypatch
 ):
     monkeypatch.setattr(process1_activities.asyncio, "sleep", _no_sleep)
-    acts = RegistrationActivities()
+    process1_activities.reset_activity_state_for_test()
     user_id = str(uuid.uuid7())
     email = "test@example.com"
 
@@ -30,7 +30,7 @@ async def test_registration_workflow_with_real_activities(
         env.client,
         task_queue=TASK_QUEUE,
         workflows=[RegistrationWorkflow],
-        activities=[acts.create_account, acts.add_points, acts.send_email],
+        activities=[create_account, add_points, send_email],
     ):
         await env.client.execute_workflow(
             RegistrationWorkflow.register,
@@ -40,8 +40,8 @@ async def test_registration_workflow_with_real_activities(
         )
 
     # 端到端確認 workflow 真的推動真 activity，並留下預期的 in-memory 狀態。
-    assert acts._users == {user_id}
-    assert acts._ops == {
+    assert process1_activities._demo_users == {user_id}
+    assert process1_activities._demo_ops == {
         f"POINTS#{user_id}#signupBonus",
         f"EMAIL#welcome-{user_id}",
     }

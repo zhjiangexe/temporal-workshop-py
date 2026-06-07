@@ -3,7 +3,7 @@ import asyncio
 from temporalio.client import Client
 from temporalio.worker import Worker
 
-from .activities import RegistrationActivities
+from .activities import add_points, create_account, send_email
 from .workflow import RegistrationWorkflow
 
 TASK_QUEUE = "registration-tq"
@@ -11,12 +11,11 @@ TASK_QUEUE = "registration-tq"
 
 async def main():
     client = await Client.connect("localhost:7233")
-    acts = RegistrationActivities()
     worker = Worker(
         client,
         task_queue=TASK_QUEUE,
         workflows=[RegistrationWorkflow],
-        activities=[acts.create_account, acts.add_points, acts.send_email],
+        activities=[create_account, add_points, send_email],
         max_concurrent_activities=50,         # 本 worker 同時執行的 activity 上限，超過排隊
         max_concurrent_workflow_tasks=20,     # 本 worker 同時處理的 workflow task 上限
         max_activities_per_second=50.0,       # 本 worker 的 activity 執行速率上限
