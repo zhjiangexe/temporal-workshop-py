@@ -75,7 +75,7 @@
       .replace(/(^|\n)(\s*#.*)/g, '$1<span class="hl-comment">$2</span>')
       .replace(/\b([A-Z_][A-Z0-9_]*=)/g, '<span class="hl-env">$1</span>')
       .replace(
-        /(^|\n)(\s*)(uv|temporal|pkill|pytest|python|docker|make|curl|FAIL_PUBLISH=1)\b/g,
+        /(^|\n)(\s*)(brew|cd|curl|docker|git|make|node|npm|pkill|pytest|python|temporal|uv|FAIL_PUBLISH=1)\b/g,
         '$1$2<span class="hl-command">$3</span>'
       );
 
@@ -86,7 +86,7 @@
     if (/@(?:workflow|activity)\.|^\s*(async\s+def|class|from|import|try:|except|await)\b/m.test(text)) {
       return "python";
     }
-    if (/^\s*(uv|temporal|pkill|pytest|python|docker|make|curl|FAIL_PUBLISH=1)\b/m.test(text)) {
+    if (/^\s*(brew|cd|curl|docker|git|make|node|npm|pkill|pytest|python|temporal|uv|FAIL_PUBLISH=1)\b/m.test(text)) {
       return "shell";
     }
     return "text";

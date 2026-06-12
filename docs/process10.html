@@ -33,6 +33,8 @@
 <body>
 
 <nav>
+  <a href="setup-python.html">Python/uv</a>
+  <a href="setup-typescript.html">TypeScript</a>
   <a href="process1.html">1</a>
   <a href="process2.html">2</a>
   <a href="process2-1.html">2-1</a>
@@ -80,14 +82,15 @@ Workflow 進入 Cancelled 狀態</code></pre>
 
 <div class="callout-ok callout">
   <strong>實際原始碼位置</strong><br>
-  本頁範例位於 <code>src/temporal_learn/process10/</code>；執行指令中的 <code>temporal_learn.process10</code> 是對應的 Python module path。
+  本頁範例位於 <code>python/src/temporal_learn/process10/</code>；執行指令中的 <code>temporal_learn.process10</code> 是對應的 Python module path。
 </div>
 
 <h2>啟動方式</h2>
 <div class="steps">
   <div class="step">
     <strong>用測試執行（推薦）</strong>
-    <pre><code>uv run pytest tests/test_process10_cancellation.py -v</code></pre>
+<pre><code>cd python
+uv run pytest tests/process10 -q</code></pre>
   </div>
   <div class="step">
     <strong>或手動操作</strong>

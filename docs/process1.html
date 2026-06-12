@@ -58,6 +58,8 @@
 <body>
 
 <nav>
+  <a href="setup-python.html">Python/uv</a>
+  <a href="setup-typescript.html">TypeScript</a>
   <a href="process1.html">1</a>
   <a href="process2.html">2</a>
   <a href="process2-1.html">2-1</a>
@@ -96,7 +98,7 @@
 
 <div class="callout-ok callout">
   <strong>實際原始碼位置</strong><br>
-  本頁範例位於 <code>src/temporal_learn/process1/</code>；執行指令中的 <code>temporal_learn.process1</code> 是對應的 Python module path。
+  本頁範例位於 <code>python/src/temporal_learn/process1/</code>；執行指令中的 <code>temporal_learn.process1</code> 是對應的 Python module path。
 </div>
 
 <h2>啟動方式</h2>
@@ -109,13 +111,15 @@
 
   <div class="step">
     <strong>啟動 Worker</strong>
-    <pre><code>uv run python -m temporal_learn.process1.worker</code></pre>
+    <pre><code>cd python
+uv run python -m temporal_learn.process1.worker</code></pre>
     <p>Worker 會註冊到 <code>registration-tq</code> task queue，等待任務分派。</p>
   </div>
 
   <div class="step">
     <strong>啟動 Workflow</strong>
-    <pre><code>uv run python -m temporal_learn.process1.starter</code></pre>
+    <pre><code>cd python
+uv run python -m temporal_learn.process1.starter</code></pre>
     <p>會印出 <code>WorkflowId: registration-xxxx</code>，記下這個 ID。</p>
   </div>
 
@@ -174,9 +178,7 @@ class RegisterRequest:
   <div class="code-explain-row">
     <div class="code-pane">
       <h3>workflow.py — Step 1：設定重試策略</h3>
-      <pre><code>_RETRY = RetryPolicy(
-    maximum_attempts=5,
-
+      <pre><code>"retry_policy": RetryPolicy(
     initial_interval=timedelta(seconds=5),
     backoff_coefficient=2,
     maximum_interval=timedelta(seconds=100),
@@ -185,7 +187,7 @@ class RegisterRequest:
     <div class="connector" aria-hidden="true"></div>
     <div class="explain-pane">
       <ol class="explain-steps">
-        <li><code>maximum_attempts=5</code> 表示 Activity 最多嘗試 5 次。</li>
+        <li>未設定 <code>maximum_attempts</code> 表示不限制重試次數，由 timeout 決定何時放棄。</li>
         <li><code>initial_interval</code> 是第一次重試前要等多久。</li>
         <li><code>backoff_coefficient=2</code> 讓等待時間每次加倍：5s → 10s → 20s → 40s。</li>
         <li><code>maximum_interval</code> 限制單次重試等待時間不要無限變長。</li>
@@ -203,7 +205,11 @@ class RegisterRequest:
 
     "heartbeat_timeout": timedelta(seconds=10),
 
-    "retry_policy": _RETRY,
+    "retry_policy": RetryPolicy(
+        initial_interval=timedelta(seconds=5),
+        backoff_coefficient=2,
+        maximum_interval=timedelta(seconds=100),
+    ),
 }</code></pre>
     </div>
     <div class="connector" aria-hidden="true"></div>
@@ -293,7 +299,7 @@ class RegistrationWorkflow:
       <div class="callout">
         <strong>Sequential Workflow 的核心</strong><br>
         三個 Activity 都用 <code>await</code> 串起來，所以順序固定是：建立帳號 → 新增點數 → 寄歡迎信。<br><br>
-        如果其中一步失敗，Temporal 會先依照 <code>_RETRY</code> 重試；重試仍失敗時，後面的 Activity 不會繼續執行。
+        如果其中一步失敗，Temporal 會先依照 <code>retry_policy</code> 重試；重試仍失敗時，後面的 Activity 不會繼續執行。
       </div>
     </div>
   </div>

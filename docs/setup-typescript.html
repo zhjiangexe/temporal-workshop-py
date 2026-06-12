@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setup — Node + TypeScript</title>
+<style>
+  :root { --bg: #f6f8fb; --fg: #26313d; --accent: #2563eb; --code-bg: #eef3f8; --border: #d7dee8; --warn: #b7791f; --ok: #168353; --err: #c43d3d; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); line-height: 1.7; padding: 2rem; max-width: 1120px; margin: 0 auto; }
+  h1 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; margin-bottom: 1.5rem; font-size: 1.8rem; }
+  h2 { color: var(--accent); margin: 2rem 0 1rem; font-size: 1.3rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; overflow-x: auto; margin: 1rem 0; font-size: .9rem; line-height: 1.5; }
+  code { font-family: "SF Mono", "Fira Code", monospace; }
+  p { margin: .5rem 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .75rem; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); color: var(--accent); }
+  .tag { display: inline-block; background: var(--accent); color: var(--bg); padding: 2px 8px; border-radius: 4px; font-size: .75rem; font-weight: bold; margin-right: .5rem; }
+  .callout { border-left: 4px solid var(--warn); background: #fff7df; padding: .75rem 1rem; margin: 1rem 0; border-radius: 0 6px 6px 0; }
+  .callout-ok { border-left-color: var(--ok); background: #eaf7ef; }
+  a { color: var(--accent); }
+  nav { margin-bottom: 2rem; }
+  nav a { margin-right: 1rem; font-size: .85rem; }
+</style>
+<link rel="stylesheet" href="workshop.css">
+</head>
+<body>
+
+<nav>
+  <a href="setup-python.html">Python/uv</a>
+  <a href="setup-typescript.html">TypeScript</a>
+  <a href="process1.html">1</a>
+  <a href="process2.html">2</a>
+  <a href="process2-1.html">2-1</a>
+  <a href="process2-2.html">2-2</a>
+  <a href="process3.html">3</a>
+  <a href="process4.html">4</a>
+  <a href="process5.html">5</a>
+  <a href="process6.html">6</a>
+  <a href="process7.html">7</a>
+  <a href="process8.html">8</a>
+  <a href="process9.html">9</a>
+  <a href="process10.html">10</a>
+  <a href="process11.html">11</a>
+</nav>
+
+<h1>Setup — Node + TypeScript</h1>
+<p><span class="tag">Workshop Setup</span><span class="tag">Node.js</span><span class="tag">TypeScript</span></p>
+
+<h2>這份 workshop 需要什麼？</h2>
+<table>
+  <tr><th>工具</th><th>本 workshop 用途</th><th>確認指令</th></tr>
+  <tr><td><code>git</code></td><td>下載這份 repository。</td><td><code>git --version</code></td></tr>
+  <tr><td><code>node</code> / <code>npm</code></td><td>安裝與執行 <code>typescript/</code> 版本。</td><td><code>node --version</code><br><code>npm --version</code></td></tr>
+  <tr><td><code>temporal</code></td><td>啟動本機 Temporal Server 與 Web UI。</td><td><code>temporal --version</code></td></tr>
+</table>
+
+<h2>建議安裝方式</h2>
+<p>macOS / Homebrew：</p>
+<pre><code>brew install node temporal</code></pre>
+
+<p>安裝完成後確認：</p>
+<pre><code>node --version
+npm --version
+temporal --version</code></pre>
+
+<h2>下載並初始化 TypeScript 版</h2>
+<pre><code>git clone git@github.com:zhjiangexe/temporal-workshop-py.git
+cd temporal-workshop-py/typescript
+npm install</code></pre>
+
+<div class="callout">
+  <strong>注意</strong><br>
+  TypeScript 版本獨立放在 <code>typescript/</code>。所有 <code>npm</code> 指令都在這個資料夾執行。
+</div>
+
+<h2>確認 TypeScript 版可以跑</h2>
+<pre><code>npm run typecheck
+npm test</code></pre>
+
+<h2>啟動 Temporal Server</h2>
+<p>開一個 terminal，保持它執行：</p>
+<pre><code>temporal server start-dev</code></pre>
+
+<table>
+  <tr><th>項目</th><th>位置</th></tr>
+  <tr><td>Worker / Starter 連線位置</td><td><code>localhost:7233</code></td></tr>
+  <tr><td>Web UI</td><td><a href="http://localhost:8233" target="_blank">http://localhost:8233</a></td></tr>
+</table>
+
+<h2>跑第一個流程</h2>
+<p>在 <code>typescript/</code> 目錄，開第二個 terminal 啟動 Worker：</p>
+<pre><code>npm run process1:worker</code></pre>
+
+<p>開第三個 terminal 啟動 Workflow：</p>
+<pre><code>npm run process1:starter</code></pre>
+
+<h2>本 workshop 的 TypeScript 指令</h2>
+<table>
+  <tr><th>流程</th><th>Worker</th><th>Starter / Update</th></tr>
+  <tr><td>Process 1</td><td><code>npm run process1:worker</code></td><td><code>npm run process1:starter</code></td></tr>
+  <tr><td>Process 2</td><td><code>npm run process2:worker</code></td><td><code>npm run process2:starter</code></td></tr>
+  <tr><td>Process 2 失敗示範</td><td><code>FAIL_PUBLISH=1 npm run process2:worker</code></td><td><code>npm run process2:starter</code></td></tr>
+  <tr><td>Process 3</td><td><code>npm run process3:worker</code></td><td><code>npm run process3:starter</code><br><code>npm run process3:update -- &lt;WorkflowId&gt;</code></td></tr>
+</table>
+
+<div class="callout-ok callout">
+  <strong>Workshop 原則</strong><br>
+  TypeScript 版只涵蓋 Process 1～3，且放在 <code>typescript/</code>，不要和 Python 的 <code>python/src/temporal_learn/</code> 混在一起執行。
+</div>
+
+<script src="workshop.js"></script>
+</body>
+</html>

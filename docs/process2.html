@@ -28,6 +28,8 @@
 <body>
 
 <nav>
+  <a href="setup-python.html">Python/uv</a>
+  <a href="setup-typescript.html">TypeScript</a>
   <a href="process1.html">1</a>
   <a href="process2.html">2</a>
   <a href="process2-1.html">2-1</a>
@@ -51,13 +53,13 @@
   <tr><th>版本</th><th>程式位置</th><th>重點</th><th>適合時機</th></tr>
   <tr>
     <td><a href="process2-1.html">Process 2-1</a></td>
-    <td><code>src/temporal_learn/process2_1/</code></td>
+    <td><code>python/src/temporal_learn/process2_1/</code></td>
     <td>直接在 <code>workflow.py</code> 維護 <code>compensations</code> 清單，正向 Activity 執行前先登記安全補償。</td>
     <td>初學 Temporal 時優先看這版，最貼近 Workflow 呼叫 Activity 的原始概念。</td>
   </tr>
   <tr>
     <td><a href="process2-2.html">Process 2-2</a></td>
-    <td><code>src/temporal_learn/process2_2/</code></td>
+    <td><code>python/src/temporal_learn/process2_2/</code></td>
     <td>使用 <code>shared/saga.py</code> 封裝補償清單與反向執行，同樣先登記安全補償。</td>
     <td>已理解 2-1 後，再看如何把重複的補償管理抽成 helper。</td>
   </tr>
@@ -66,6 +68,32 @@
 <div class="callout-ok callout">
   <strong>建議閱讀順序</strong><br>
   先看 <a href="process2-1.html">Process 2-1</a>，理解 Temporal Workflow 如何直接編排正向 Activity 與補償 Activity；再看 <a href="process2-2.html">Process 2-2</a>，理解 helper 只是在整理程式碼，不是 Temporal SDK 的內建功能。
+</div>
+
+<h2>補償流程示範開關</h2>
+<p>
+  Process 2-1 與 Process 2-2 都可以用 <code>FAIL_PUBLISH=1</code> 啟動 Worker，
+  模擬 <code>publish_to_storefront</code> 失敗，進而觀察補償 Activity 是否依反向順序執行。
+</p>
+
+<table>
+  <tr><th>版本</th><th>模擬上架失敗</th><th>啟動 Workflow</th></tr>
+  <tr>
+    <td>Process 2-1</td>
+    <td><code>cd python &amp;&amp; FAIL_PUBLISH=1 uv run python -m temporal_learn.process2_1.worker</code></td>
+    <td><code>cd python &amp;&amp; uv run python -m temporal_learn.process2_1.starter</code></td>
+  </tr>
+  <tr>
+    <td>Process 2-2</td>
+    <td><code>cd python &amp;&amp; FAIL_PUBLISH=1 uv run python -m temporal_learn.process2_2.worker</code></td>
+    <td><code>cd python &amp;&amp; uv run python -m temporal_learn.process2_2.starter</code></td>
+  </tr>
+</table>
+
+<div class="callout">
+  <strong>注意</strong><br>
+  <code>FAIL_PUBLISH=1</code> 要加在 Worker 啟動時，因為失敗邏輯是在 Activity 執行端判斷。
+  如果只加在 starter 上，Workflow 仍會送出，但 Activity 不會模擬失敗。
 </div>
 
 <script src="workshop.js"></script>

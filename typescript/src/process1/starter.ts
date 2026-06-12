@@ -1,12 +1,11 @@
-import { Client } from '@temporalio/client';
+import { Client, Connection } from '@temporalio/client';
 import { randomUUID } from 'crypto';
 import { registrationWorkflow } from './workflow';
-import type { RegisterRequest } from './models';
-
-const TASK_QUEUE = 'registration-ts-tq';
+import { TASK_QUEUE, TEMPORAL_URL, type RegisterRequest } from './models';
 
 async function main() {
-  const client = new Client();
+  const connection = await Connection.connect({ address: TEMPORAL_URL });
+  const client = new Client({ connection });
   const userId = randomUUID();
   const request: RegisterRequest = {
     userId,
@@ -20,6 +19,7 @@ async function main() {
   });
 
   console.log(`WorkflowId: ${handle.workflowId}`);
+  await connection.close();
 }
 
 main().catch((err) => {

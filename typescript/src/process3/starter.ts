@@ -1,12 +1,11 @@
-import { Client } from '@temporalio/client';
+import { Client, Connection } from '@temporalio/client';
 import { randomUUID } from 'crypto';
-import type { ProductChangeSpec } from './models';
+import { TASK_QUEUE, TEMPORAL_URL, type ProductChangeSpec } from './models';
 import { productChangeWorkflow } from './workflow';
 
-const TASK_QUEUE = 'price-change-ts-tq';
-
 async function main() {
-  const client = new Client();
+  const connection = await Connection.connect({ address: TEMPORAL_URL });
+  const client = new Client({ connection });
   const spec: ProductChangeSpec = {
     requestId: `REQ-${randomUUID()}`,
     productId: 'P001',
@@ -20,6 +19,7 @@ async function main() {
   });
 
   console.log(`WorkflowId: ${handle.workflowId}`);
+  await connection.close();
 }
 
 main().catch((err) => {

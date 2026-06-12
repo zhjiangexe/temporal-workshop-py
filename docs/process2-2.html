@@ -37,6 +37,8 @@
 <body>
 
 <nav>
+  <a href="setup-python.html">Python/uv</a>
+  <a href="setup-typescript.html">TypeScript</a>
   <a href="process1.html">1</a>
   <a href="process2.html">2</a>
   <a href="process2-1.html">2-1</a>
@@ -93,7 +95,7 @@
 
 <div class="callout-ok callout">
   <strong>實際原始碼位置</strong><br>
-  本頁範例位於 <code>src/temporal_learn/process2_2/</code>；執行指令中的 <code>temporal_learn.process2_2</code> 是對應的 Python module path。
+  本頁範例位於 <code>python/src/temporal_learn/process2_2/</code>；執行指令中的 <code>temporal_learn.process2_2</code> 是對應的 Python module path。
 </div>
 
 <h2>啟動方式（Happy Path）</h2>
@@ -104,11 +106,13 @@
   </div>
   <div class="step">
     <strong>啟動 Worker</strong>
-    <pre><code>uv run python -m temporal_learn.process2_2.worker</code></pre>
+    <pre><code>cd python
+uv run python -m temporal_learn.process2_2.worker</code></pre>
   </div>
   <div class="step">
     <strong>啟動 Workflow</strong>
-    <pre><code>uv run python -m temporal_learn.process2_2.starter</code></pre>
+    <pre><code>cd python
+uv run python -m temporal_learn.process2_2.starter</code></pre>
   </div>
   <div class="step">
     <strong>在 Web UI 觀察</strong>
@@ -140,11 +144,13 @@ async def publish_to_storefront(product_id: str) -> None:
   </div>
   <div class="step">
     <strong>帶環境變數啟動 Worker</strong>
-    <pre><code>FAIL_PUBLISH=1 uv run python -m temporal_learn.process2_2.worker</code></pre>
+    <pre><code>cd python
+FAIL_PUBLISH=1 uv run python -m temporal_learn.process2_2.worker</code></pre>
   </div>
   <div class="step">
     <strong>送出新的 Workflow</strong>
-    <pre><code>uv run python -m temporal_learn.process2_2.starter</code></pre>
+    <pre><code>cd python
+uv run python -m temporal_learn.process2_2.starter</code></pre>
   </div>
 </div>
 
@@ -223,7 +229,11 @@ async def publish_to_storefront(product_id: str) -> None:
       <pre><code># workflow.ActivityConfig 是 SDK 內建的 TypedDict，提供 activity 選項的型別檢查
 _ACT_CFG: workflow.ActivityConfig = {
     "schedule_to_close_timeout": timedelta(seconds=15),
-    "retry_policy": _RETRY,
+    "retry_policy": RetryPolicy(
+        maximum_attempts=2,
+        initial_interval=timedelta(seconds=5),
+        backoff_coefficient=2.0,
+    ),
 }
 
 saga = Saga()

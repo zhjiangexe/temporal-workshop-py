@@ -33,6 +33,8 @@
 <body>
 
 <nav>
+  <a href="setup-python.html">Python/uv</a>
+  <a href="setup-typescript.html">TypeScript</a>
   <a href="process1.html">1</a>
   <a href="process2.html">2</a>
   <a href="process2-1.html">2-1</a>
@@ -68,7 +70,7 @@
 
 <div class="callout-ok callout">
   <strong>實際原始碼位置</strong><br>
-  本頁範例位於 <code>src/temporal_learn/process4/</code>；執行指令中的 <code>temporal_learn.process4</code> 是對應的 Python module path。
+  本頁範例位於 <code>python/src/temporal_learn/process4/</code>；執行指令中的 <code>temporal_learn.process4</code> 是對應的 Python module path。
 </div>
 
 <h2>啟動方式</h2>
@@ -79,11 +81,13 @@
   </div>
   <div class="step">
     <strong>啟動 Worker</strong>
-    <pre><code>uv run python -m temporal_learn.process4.worker</code></pre>
+    <pre><code>cd python
+uv run python -m temporal_learn.process4.worker</code></pre>
   </div>
   <div class="step">
     <strong>啟動 Workflow</strong>
-    <pre><code>uv run python -m temporal_learn.process4.starter</code></pre>
+    <pre><code>cd python
+uv run python -m temporal_learn.process4.starter</code></pre>
     <p>觀察 Worker 的終端輸出，會看到 <code>progress: 0 %</code> ~ <code>progress: 99 %</code>。</p>
   </div>
   <div class="step">

@@ -1,12 +1,11 @@
-import { Client } from '@temporalio/client';
+import { Client, Connection } from '@temporalio/client';
 import { randomUUID } from 'crypto';
-import type { ProductInput } from './models';
+import { TASK_QUEUE, TEMPORAL_URL, type ProductInput } from './models';
 import { productOnboardingWorkflow } from './workflow';
 
-const TASK_QUEUE = 'product-onboarding-ts-tq';
-
 async function main() {
-  const client = new Client();
+  const connection = await Connection.connect({ address: TEMPORAL_URL });
+  const client = new Client({ connection });
   const productInput: ProductInput = {
     requestId: randomUUID(),
     sku: 'SKU-12345',
@@ -24,6 +23,7 @@ async function main() {
   });
 
   console.log(`WorkflowId: ${handle.workflowId}`);
+  await connection.close();
 }
 
 main().catch((err) => {
